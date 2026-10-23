@@ -2,6 +2,7 @@ package id.mybase.aether.adb
 
 import id.mybase.aether.security.InputValidators
 import java.net.ConnectException
+import java.net.SocketTimeoutException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -14,7 +15,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeout
 
 /**
  * [AdbShell] implementation: an explicit state machine over one [AdbSession].
@@ -63,28 +63,26 @@ class AdbConnectionManager(
             closeSessionLocked()
             _state.value = AdbConnectionState.Connecting(cleanHost, port)
             try {
-                // The timeout must tick in real wall-clock time: connect() may be
-                // invoked from a caller dispatcher that uses virtual time
-                // (notably kotlinx-coroutines-test's runTest in unit tests), on
-                // which a network timeout would fire spuriously while blocking
-                // I/O runs on real threads. Anchoring to ioDispatcher — whose
-                // Delay is always wall-clock — fixes that.
+                // The handshake timeout is enforced by AdbSession.open via
+                // socket.soTimeout (real wall-clock time). A coroutine
+                // withTimeout here would run on the caller's Delay — under
+                // kotlinx-coroutines-test's virtual time it fires spuriously
+                // while blocking I/O runs on real threads — so there is
+                // deliberately no withTimeout at this layer.
                 session =
-                    withContext(ioDispatcher) {
-                        withTimeout(timeoutMs) {
-                            AdbSession.open(
-                                cleanHost,
-                                port,
-                                keys,
-                                timeoutMs,
-                                managerScope,
-                                ioDispatcher,
-                            )
-                        }
-                    }
+                    AdbSession.open(
+                        cleanHost,
+                        port,
+                        keys,
+                        timeoutMs,
+                        managerScope,
+                        ioDispatcher,
+                    )
                 _state.value = AdbConnectionState.Connected(cleanHost, port)
                 return Result.success(Unit)
-            } catch (e: TimeoutCancellationException) {
+            } catch (e: SocketTimeoutException) {
+                // Thrown by AdbSession.open when the TLS/CNXN handshake exceeds
+                // the socket.soTimeout (real wall-clock time).
                 closeSessionLocked()
                 _state.value =
                     AdbConnectionState.Failed("Connection timed out after ${timeoutMs}ms")

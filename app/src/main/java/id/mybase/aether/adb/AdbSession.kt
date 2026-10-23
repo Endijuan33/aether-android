@@ -4,6 +4,7 @@ import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
+import java.net.SocketTimeoutException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -15,7 +16,6 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.isActive
@@ -67,7 +67,8 @@ private constructor(
          * Opens the TLS channel and performs the CNXN handshake. In TLS mode no AUTH exchange takes
          * place: presenting our client certificate during the handshake is the authentication.
          *
-         * @throws TimeoutCancellationException when the handshake exceeds [timeoutMs]
+         * @throws java.net.SocketTimeoutException when the handshake exceeds [timeoutMs] (mapped to
+         *   the timeout Failed state by AdbConnectionManager.connect)
          * @throws java.net.ConnectException when the port actively refuses
          * @throws AdbException on handshake-level failures
          */
@@ -80,17 +81,24 @@ private constructor(
             ioDispatcher: CoroutineDispatcher,
         ): AdbSession =
             withContext(ioDispatcher) {
+                // OS-level read timeouts (soTimeout) bound the TLS handshake and
+                // the CNXN exchange. They are independent of the coroutine Delay,
+                // so they fire in real wall-clock time even when the caller runs
+                // under kotlinx-coroutines-test's virtual time (where a coroutine
+                // withTimeout around blocking I/O would never fire).
+                val handshakeTimeoutMs =
+                    timeoutMs.coerceAtMost(Int.MAX_VALUE.toLong()).toInt().coerceAtLeast(1)
                 val socket =
                     AdbTlsTransport.openAdbChannel(
                         host,
                         port,
                         keys,
                         connectTimeoutMs = timeoutMs.coerceAtMost(10_000).toInt().coerceAtLeast(1),
+                        handshakeTimeoutMs = handshakeTimeoutMs,
                     )
+                // CNXN exchange reads are bounded by the same timeout.
+                socket.soTimeout = handshakeTimeoutMs
                 try {
-                    // The caller (AdbConnectionManager.connect) bounds this with
-                    // withTimeout; withSocketGuard makes a hung handshake
-                    // unblock on cancellation instead of leaking the thread.
                     withSocketGuard(socket) {
                         val input = socket.inputStream
                         val output = socket.outputStream
@@ -115,7 +123,17 @@ private constructor(
                                 )
                         }
                     }
+                    // Handshake complete: back to blocking mode for the session
+                    // lifetime. Per-stream timeouts are enforced by coroutine
+                    // withTimeout, which is safe there (no blocking I/O under
+                    // virtual time).
+                    socket.soTimeout = 0
                     AdbSession(socket, parentScope, ioDispatcher)
+                } catch (e: SocketTimeoutException) {
+                    // Handshake read timed out (soTimeout): propagate as-is;
+                    // AdbConnectionManager.connect maps it to the timeout Failed state.
+                    runCatching { socket.close() }
+                    throw e
                 } catch (e: Throwable) {
                     runCatching { socket.close() }
                     throw e

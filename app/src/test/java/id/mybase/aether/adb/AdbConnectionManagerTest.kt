@@ -169,10 +169,17 @@ class AdbConnectionManagerTest {
 
     @Test
     fun `cancelling a hung exec does not kill the session`() = runTest {
+        // Only the first OPEN hangs (never closed); subsequent OPENs complete
+        // normally so we can verify the session survived.
+        val openCount = java.util.concurrent.atomic.AtomicInteger(0)
         val server =
             FakeAdbServer(
                 openHandler = { _ ->
-                    FakeAdbServer.OpenResponse(emptyList(), sendClose = false)
+                    if (openCount.getAndIncrement() == 0) {
+                        FakeAdbServer.OpenResponse(emptyList(), sendClose = false)
+                    } else {
+                        FakeAdbServer.OpenResponse(listOf("v1\n".toByteArray()))
+                    }
                 },
             )
         val m = manager()

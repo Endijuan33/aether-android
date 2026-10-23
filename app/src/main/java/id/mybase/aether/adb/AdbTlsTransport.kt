@@ -57,21 +57,32 @@ internal object AdbTlsTransport {
      * TLS socket to the ADB endpoint, presenting our client certificate so adbd can authorize the
      * connection against the key registered at pairing time. Cancellation-safe like
      * [openPairingChannel].
+     *
+     * @param handshakeTimeoutMs OS-level read timeout (soTimeout) for the TLS handshake, in
+     *   milliseconds. This is independent of the coroutine Delay, so it fires in real wall-clock
+     *   time even when the caller runs under kotlinx-coroutines-test's virtual time (where a
+     *   coroutine withTimeout around blocking I/O would never fire). 0 (default) disables the
+     *   timeout.
      */
     suspend fun openAdbChannel(
         host: String,
         port: Int,
         keys: AdbKeyMaterial,
         connectTimeoutMs: Int,
+        handshakeTimeoutMs: Int = 0,
     ): SSLSocket {
         val sslContext = SSLContext.getInstance("TLS")
         sslContext.init(arrayOf(SingleKeyManager(keys)), arrayOf(trustAllManager()), SecureRandom())
         val socket = sslContext.socketFactory.createSocket() as SSLSocket
+        if (handshakeTimeoutMs > 0) socket.soTimeout = handshakeTimeoutMs
         try {
             withSocketGuard(socket) {
                 socket.connect(InetSocketAddress(host, port), connectTimeoutMs)
                 socket.startHandshake()
             }
+            // Handshake done: back to blocking mode. The caller (AdbSession.open)
+            // applies its own soTimeout for the CNXN exchange.
+            socket.soTimeout = 0
             return socket
         } catch (e: Throwable) {
             runCatching { socket.close() }

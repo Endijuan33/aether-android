@@ -45,8 +45,16 @@ class FakeAdbServer(
 
     private fun acceptLoop() {
         try {
-            val socket: Socket = serverSocket.accept()
-            handle(socket)
+            // Accept multiple connections (the reconnect test connects, disconnects,
+            // then connects again). Each connection is handled on its own thread so
+            // a long-lived connection never blocks the next accept.
+            while (true) {
+                val socket: Socket = serverSocket.accept()
+                Thread({ handle(socket) }, "fake-adb-conn").apply {
+                    isDaemon = true
+                    start()
+                }
+            }
         } catch (e: Exception) {
             // ServerSocket closed by close().
         }

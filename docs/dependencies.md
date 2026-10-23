@@ -45,6 +45,7 @@ networking library, no DI framework (manual `AppContainer`), no Room
 | `junit:junit` | 4.13.2 | EPL-1.0 | Unit tests |
 | `org.jetbrains.kotlinx:kotlinx-coroutines-test` | 1.11.0 | Apache-2.0 | `runTest` for suspending code |
 | `app.cash.turbine:turbine` | 1.2.1 | Apache-2.0 | `StateFlow` / ViewModel state testing |
+| `org.json:json` | 20260814 | JSON License | **Unit tests only.** The `android.jar` on the test classpath stubs out `org.json` (every method throws `"Stub!"`); this real implementation shadows the stubs so `ExportInventory` JSON code is testable on the JVM. The APK still uses the framework's `org.json` at runtime — this dependency never ships. |
 
 ## CI-only tooling
 
