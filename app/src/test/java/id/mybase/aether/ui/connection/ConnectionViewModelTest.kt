@@ -157,25 +157,23 @@ class ConnectionViewModelTest {
         // Override Dispatchers.Main with the runTest dispatcher so viewModelScope
         // uses it. The MainDispatcherRule sets UnconfinedTestDispatcher, which
         // conflicts with runTest's scheduler.
-        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
-        try {
-            val testShell = FakeAdbShell()
-            val testClient = FakePairingClient()
-            val testPrefs = AetherPreferences(FakeContext())
-            val testVm = ConnectionViewModel(testShell, testClient, testPrefs)
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(testDispatcher)
+        val testShell = FakeAdbShell()
+        val testClient = FakePairingClient()
+        val testPrefs = AetherPreferences(FakeContext())
+        val testVm = ConnectionViewModel(testShell, testClient, testPrefs)
 
-            testVm.connect("192.168.1.5", 5555)
-            // Let the viewModelScope coroutine run to completion.
-            advanceUntilIdle()
+        testVm.connect("192.168.1.5", 5555)
+        // Let the viewModelScope coroutine run to completion.
+        testScheduler.advanceUntilIdle()
 
-            assertEquals(1, testShell.connectCalls)
-            assertEquals("192.168.1.5" to 5555, testShell.lastConnectArgs)
-            // DataStore write should have completed after advanceUntilIdle.
-            assertEquals(5555, testPrefs.lastConnectionPort.first())
-            assertNull(testVm.connectError.value)
-        } finally {
-            Dispatchers.resetMain()
-        }
+        assertEquals(1, testShell.connectCalls)
+        assertEquals("192.168.1.5" to 5555, testShell.lastConnectArgs)
+        // DataStore write should have completed after advanceUntilIdle.
+        assertEquals(5555, testPrefs.lastConnectionPort.first())
+        assertNull(testVm.connectError.value)
+        Dispatchers.resetMain()
     }
 
     @Test
