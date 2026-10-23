@@ -8,11 +8,18 @@
   - QUERY_ALL_PACKAGES: full installed-package inventory on API 30+.
     This is a normal (non-dangerous) permission; listing is read-only.
 -->
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
+    <!-- Required: AETHER's core function is enumerating all installed packages
+         for inspection and safe debloating. A <queries> declaration cannot
+         substitute because the app must discover arbitrary system packages,
+         not just those matching specific intents. -->
+    <uses-permission
+        android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
 
     <uses-feature
         android:name="android.hardware.wifi"
