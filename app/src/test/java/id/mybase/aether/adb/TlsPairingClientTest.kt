@@ -21,17 +21,18 @@ class TlsPairingClientTest {
         TlsPairingClient(
             FakeAdbKeyMaterial(),
             openChannel = { host, port, timeoutMs ->
-                // Real BC TLS handshake against the fake server (which uses
-                // platform TLS), but substitute fixed exporter bytes so the
-                // SPAKE2 password matches the fake server's expectation.
-                val real = ConscryptPairingTransport.openPairingChannel(host, port, timeoutMs)
+                // Real TLS handshake against the fake server (which uses platform
+                // TLS), but substitute fixed exporter bytes so the SPAKE2 password
+                // matches the fake server's expectation. Uses BC (not Conscrypt)
+                // because BC is pure-Java and works on JVM unit tests, while
+                // Conscrypt Android requires Android native libraries.
+                val real = BcTlsPairingTransport.openPairingChannel(host, port, timeoutMs)
                 ConscryptPairingTransport.PairingTlsChannel(
                     input = real.input,
                     output = real.output,
                     exporter = exporterBytes.copyOf(),
-                ) {
-                    real.close()
-                }
+                    closeAction = { real.close() },
+                )
             },
         )
 

@@ -25,14 +25,14 @@ class AdbConnectionManagerTest {
             TlsPairingClient(
                 keys,
                 openChannel = { host, port, timeoutMs ->
-                    val real = ConscryptPairingTransport.openPairingChannel(host, port, timeoutMs)
+                    // Uses BC (not Conscrypt) for JVM unit-test compatibility.
+                    val real = BcTlsPairingTransport.openPairingChannel(host, port, timeoutMs)
                     ConscryptPairingTransport.PairingTlsChannel(
                         input = real.input,
                         output = real.output,
                         exporter = exporterBytes.copyOf(),
-                    ) {
-                        real.close()
-                    }
+                        closeAction = { real.close() },
+                    )
                 },
             )
         return AdbConnectionManager(keys, pairingClient)
