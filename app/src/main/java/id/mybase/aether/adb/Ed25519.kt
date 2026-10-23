@@ -30,10 +30,11 @@ internal object Ed25519 {
 
     /** sqrt(-1) mod p = 2^((p-1)/4), for the p = 5 (mod 8) square-root fixup. */
     private val SQRT_M1 =
-        BigInteger.TWO.modPow(
-            P.subtract(BigInteger.ONE).shiftRight(2),
-            P,
-        )
+        BigInteger.valueOf(2)
+            .modPow(
+                P.subtract(BigInteger.ONE).shiftRight(2),
+                P,
+            )
 
     data class Point(val x: BigInteger, val y: BigInteger)
 
