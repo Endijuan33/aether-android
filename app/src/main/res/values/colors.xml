@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- AETHER brand palette: dark graphite + electric cyan. -->
+<resources>
+    <color name="graphite_900">#0E1218</color>
+    <color name="graphite_800">#141A22</color>
+    <color name="graphite_700">#1C242E</color>
+    <color name="cyan_electric">#00E5CC</color>
+    <color name="blue_restrained">#3D7BFF</color>
+    <color name="text_primary">#E8EEF4</color>
+    <color name="text_secondary">#9AA7B4</color>
+    <color name="success">#34D399</color>
+    <color name="warning">#FBBF24</color>
+    <color name="error">#F87171</color>
+</resources>

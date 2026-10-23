@@ -1,0 +1,121 @@
+# Project AETHER — weekly dependency hygiene.
+#
+# Runs every Monday at 06:00 UTC (and on demand). Gates on dynamic dependency
+# versions, exports the full resolved dependency list for human review, and is
+# explicit about what it does NOT cover: there is no vulnerability scan,
+# because osv-scanner's Java support requires a Gradle lockfile
+# (gradle.lockfile), buildscript-gradle.lockfile, verification-metadata.xml,
+# or pom.xml — none of which this project has in 0.1.0. Adding lockfile
+# configuration is a project change, so this workflow deliberately does not
+# do it; see the follow-up note in the summary step. Every third-party action
+# is pinned to a full immutable commit SHA (release version as trailing
+# comment). Least privilege: contents: read only.
+
+name: Dependency check
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Mondays 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  dependency-check:
+    name: Dependency check
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Validate Gradle wrapper
+        uses: gradle/wrapper-validation-action@f9c9c575b8b21b6485636a91ffecd10e558c62f6 # v3.5.0
+
+      - name: Set up JDK 17 (Temurin)
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
+
+      - name: Accept SDK licenses and ensure API 37 platform + build-tools
+        run: |
+          set -euo pipefail
+          export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
+          # See ci.yml for why pipefail is disabled on this line only.
+          set +o pipefail
+          yes | sdkmanager --licenses > /dev/null
+          set -o pipefail
+          sdkmanager "platforms;android-37" "build-tools;36.0.0"
+
+      - name: Set up Gradle (with cache)
+        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+
+      - name: Fail on dynamic dependency versions
+        run: |
+          set -euo pipefail
+          TOML="gradle/libs.versions.toml"
+          [ -f "$TOML" ] || { echo "::error::Expected version catalog $TOML not found."; exit 1; }
+          # Strip full-line comments, then flag dynamic markers. The check is
+          # intentionally strict: `+` (e.g. "1.2.+"), `latest`, `SNAPSHOT`,
+          # and Maven version ranges like [1.0,2.0) all break reproducible
+          # builds, so any match fails the workflow and prints the offending
+          # line for inspection (a `+` in a URL would be a false positive —
+          # the version catalog should not contain URLs).
+          CODE="$(grep -vE '^[[:space:]]*#' "$TOML")"
+          FAIL=0
+          check() { # $1 = human description, $2 = grep -E pattern
+            if echo "$CODE" | grep -nE "$2"; then
+              echo "::error::Dynamic version marker ($1) found in the line(s) above."
+              FAIL=1
+            fi
+          }
+          check "plus, e.g. 1.2.+" '\+'
+          check "latest" '[Ll][Aa][Tt][Ee][Ss][Tt]'
+          check "SNAPSHOT" 'SNAPSHOT'
+          check "version range, e.g. [1.0,2.0)" '[\[(][^]\[)]*,[^]\[)]*[\])]'
+          if [ "$FAIL" -ne 0 ]; then
+            echo "Dynamic dependency versions detected in $TOML — failing."
+            exit 1
+          fi
+          echo "No dynamic versions in $TOML."
+
+      - name: Export full dependency list
+        run: |
+          set -euo pipefail
+          ./gradlew :app:dependencies --configuration releaseRuntimeClasspath --console=plain > deps.txt
+          wc -l deps.txt
+
+      - name: Upload dependency list
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dependency-list
+          path: deps.txt
+          retention-days: 14
+
+      - name: Write coverage summary
+        if: always()
+        run: |
+          {
+            echo "## Dependency check — what this does and does not cover"
+            echo "- Dynamic-version gate on gradle/libs.versions.toml: fails on \`+\`, \`latest\`, \`SNAPSHOT\`, and version ranges."
+            echo "- Full dependency list (\`:app:dependencies\`, releaseRuntimeClasspath) uploaded as the \`dependency-list\` artifact for manual review."
+            echo "- OSV vulnerability scan: NOT RUN. osv-scanner's Java support requires a Gradle lockfile"
+            echo "  (gradle.lockfile), buildscript-gradle.lockfile, verification-metadata.xml, or pom.xml —"
+            echo "  none of which this project has in 0.1.0. No lockfile config was added by this workflow."
+            echo "- Recommended follow-up: enable Gradle dependency locking"
+            echo "  (\`./gradlew dependencies --write-locks\`) so a future OSV scan can resolve and match"
+            echo "  the exact dependency graph."
+          } >> "$GITHUB_STEP_SUMMARY"

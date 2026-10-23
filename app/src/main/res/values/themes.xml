@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- AETHER themes. The manifest references @style/Theme.Aether.
+     The splash entry point delegates to Theme.Aether.Base after the splash
+     screen dismisses (androidx.core:core-splashscreen API contract). -->
+<resources>
+    <style name="Theme.Aether" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/graphite_900</item>
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
+        <item name="windowSplashScreenAnimationDuration">800</item>
+        <item name="postSplashScreenTheme">@style/Theme.Aether.Base</item>
+    </style>
+
+    <style name="Theme.Aether.Base" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/graphite_900</item>
+        <item name="android:statusBarColor">@color/graphite_900</item>
+        <item name="android:navigationBarColor">@color/graphite_900</item>
+    </style>
+</resources>

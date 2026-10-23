@@ -1,0 +1,261 @@
+# Project AETHER — release pipeline.
+#
+# Triggered by version tags (v*) or manually via workflow_dispatch. Runs the
+# full verification suite, builds the release APK, optionally signs it with
+# apksigner when the signing secrets are configured, then publishes SHA-256
+# checksums and a summary. Nothing is pushed to GitHub; artifacts carry the
+# release. Every third-party action is pinned to a full immutable commit SHA
+# (release version kept as a trailing comment).
+#
+# Signing is deliberately a workflow step, not a build signingConfig: the app
+# build defines no signingConfig, so the assembled release APK is unsigned.
+# The APK is signed in this workflow ONLY when all four secrets are present:
+#   AETHER_KEYSTORE_BASE64, AETHER_KEYSTORE_PASSWORD,
+#   AETHER_KEY_ALIAS, AETHER_KEY_PASSWORD
+# If any secret is missing, signing is skipped and the summary honestly says
+# the release is unsigned. Keystores and passwords are never committed and
+# never printed; passwords reach apksigner via environment indirection only.
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Releases publish no GitHub objects (artifacts only), so cancelling a
+# superseded run is safe.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  verify:
+    name: Verify (unit tests + lint)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Validate Gradle wrapper
+        uses: gradle/wrapper-validation-action@f9c9c575b8b21b6485636a91ffecd10e558c62f6 # v3.5.0
+
+      - name: Set up JDK 17 (Temurin)
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
+
+      - name: Accept SDK licenses and ensure API 37 platform + build-tools
+        run: |
+          set -euo pipefail
+          export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
+          # See ci.yml for why pipefail is disabled on this line only.
+          set +o pipefail
+          yes | sdkmanager --licenses > /dev/null
+          set -o pipefail
+          sdkmanager "platforms;android-37" "build-tools;36.0.0"
+
+      - name: Set up Gradle (with cache)
+        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+
+      - name: Run unit tests and lint
+        run: ./gradlew testDebugUnitTest lintDebug --console=plain
+
+  build:
+    name: Build release APK (+ optional signing)
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    outputs:
+      signed: ${{ steps.signing.outputs.enabled }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Validate Gradle wrapper
+        uses: gradle/wrapper-validation-action@f9c9c575b8b21b6485636a91ffecd10e558c62f6 # v3.5.0
+
+      - name: Set up JDK 17 (Temurin)
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
+
+      - name: Accept SDK licenses and ensure API 37 platform + build-tools
+        run: |
+          set -euo pipefail
+          export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
+          set +o pipefail
+          yes | sdkmanager --licenses > /dev/null
+          set -o pipefail
+          sdkmanager "platforms;android-37" "build-tools;36.0.0"
+
+      - name: Set up Gradle (with cache)
+        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+
+      - name: Assemble release APK
+        run: ./gradlew assembleRelease --console=plain
+
+      - name: Detect signing secrets
+        id: signing
+        env:
+          AETHER_KEYSTORE_BASE64: ${{ secrets.AETHER_KEYSTORE_BASE64 }}
+          AETHER_KEYSTORE_PASSWORD: ${{ secrets.AETHER_KEYSTORE_PASSWORD }}
+          AETHER_KEY_ALIAS: ${{ secrets.AETHER_KEY_ALIAS }}
+          AETHER_KEY_PASSWORD: ${{ secrets.AETHER_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          # Only test for presence; secret values are never printed or logged.
+          if [[ -n "${AETHER_KEYSTORE_BASE64:-}" && -n "${AETHER_KEYSTORE_PASSWORD:-}" \
+             && -n "${AETHER_KEY_ALIAS:-}" && -n "${AETHER_KEY_PASSWORD:-}" ]]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "All four signing secrets present — APK will be signed."
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "Signing secrets incomplete — APK will remain unsigned."
+          fi
+
+      - name: Sign APK with apksigner
+        if: steps.signing.outputs.enabled == 'true'
+        env:
+          AETHER_KEYSTORE_BASE64: ${{ secrets.AETHER_KEYSTORE_BASE64 }}
+          AETHER_KEYSTORE_PASSWORD: ${{ secrets.AETHER_KEYSTORE_PASSWORD }}
+          AETHER_KEY_ALIAS: ${{ secrets.AETHER_KEY_ALIAS }}
+          AETHER_KEY_PASSWORD: ${{ secrets.AETHER_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          APK="$(ls app/build/outputs/apk/release/*.apk | head -n 1)"
+          echo "Signing $APK ..."
+          printf '%s' "$AETHER_KEYSTORE_BASE64" | base64 --decode > /tmp/aether-release.keystore
+          APKSIGNER="$(ls -d "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -n 1)"
+          # Sign to a temp file, verify, then replace the unsigned APK so the
+          # artifact below contains exactly one APK: the signed one.
+          # Passwords are passed via env indirection, never on the command line.
+          "$APKSIGNER" sign \
+            --ks /tmp/aether-release.keystore \
+            --ks-pass "env:AETHER_KEYSTORE_PASSWORD" \
+            --ks-key-alias "$AETHER_KEY_ALIAS" \
+            --key-pass "env:AETHER_KEY_PASSWORD" \
+            --out /tmp/aether-signed.apk "$APK"
+          "$APKSIGNER" verify /tmp/aether-signed.apk
+          mv /tmp/aether-signed.apk "$APK"
+          rm -f /tmp/aether-release.keystore
+          echo "apksigner verify: OK"
+
+      - name: Note unsigned release
+        if: steps.signing.outputs.enabled != 'true'
+        run: |
+          {
+            echo "## Signing"
+            echo "Unsigned release — signing secrets not configured."
+            echo "To produce signed releases, configure all four repository secrets:"
+            echo "AETHER_KEYSTORE_BASE64, AETHER_KEYSTORE_PASSWORD, AETHER_KEY_ALIAS, AETHER_KEY_PASSWORD."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload release APK
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-apk
+          path: app/build/outputs/apk/release/*.apk
+          retention-days: 14
+          if-no-files-found: error
+
+  checksums:
+    name: Compute SHA-256 checksums
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download release APK
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-apk
+          path: dist
+
+      - name: Compute SHA-256 checksums
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum ./*.apk > checksums.txt
+          cat checksums.txt
+          {
+            echo "## Checksums"
+            echo '```'
+            cat checksums.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload checksums
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: checksums
+          path: dist/checksums.txt
+          retention-days: 14
+
+  summary:
+    name: Release summary
+    needs: [verify, build, checksums]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # continue-on-error here: the summary must render even when an upstream
+      # job failed and its artifacts do not exist; missing data is reported
+      # as n/a rather than failing the report itself.
+      - name: Download release APK
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-apk
+          path: dist-apk
+
+      - name: Download checksums
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: checksums
+          path: dist-sums
+
+      - name: Write release summary
+        run: |
+          set -euo pipefail
+          APK_PATH="$(ls dist-apk/*.apk 2>/dev/null | head -n 1 || true)"
+          if [ -n "$APK_PATH" ]; then
+            APK_NAME="$(basename "$APK_PATH")"
+            APK_SIZE="$(stat -c%s "$APK_PATH") bytes"
+          else
+            APK_NAME="n/a (build did not produce an APK)"
+            APK_SIZE="n/a"
+          fi
+          APK_SHA="$(cut -d' ' -f1 dist-sums/checksums.txt 2>/dev/null | head -n 1 || true)"
+          [ -n "$APK_SHA" ] || APK_SHA="n/a"
+          if [ "${{ needs.build.outputs.signed }}" = "true" ]; then
+            SIGNING="signed with apksigner (keystore from AETHER_KEYSTORE_BASE64)"
+          else
+            SIGNING="unsigned — signing secrets not configured"
+          fi
+          {
+            echo "## Release summary"
+            echo "- Ref: \`${{ github.ref_name }}\` (event: ${{ github.event_name }})"
+            echo "- Verify (unit tests + lint): \`${{ needs.verify.result }}\`"
+            echo "- Build (assembleRelease): \`${{ needs.build.result }}\`"
+            echo "- Signing: $SIGNING"
+            echo "- APK: \`$APK_NAME\`"
+            echo "- Size: $APK_SIZE"
+            echo "- SHA-256: \`$APK_SHA\`"
+          } >> "$GITHUB_STEP_SUMMARY"

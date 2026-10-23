@@ -1,0 +1,17 @@
+# AETHER — System Control · git ignore rules.
+# Generated build outputs
+.gradle/
+build/
+app/build/
+*.apk
+*.aab
+# Local SDK / signing — never commit
+local.properties
+*.keystore
+*.jks
+# IDE
+.idea/
+*.iml
+.DS_Store
+# Gradle wrapper jar is committed intentionally (reproducible CI builds).
+!gradle/wrapper/gradle-wrapper.jar
