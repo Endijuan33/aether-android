@@ -142,6 +142,8 @@ class TlsPairingClient(
             val serverSpake =
                 try {
                     PairingProtocol.readFrame(input)
+                } catch (e: SocketTimeoutException) {
+                    throw e // Let the outer handler map this to Timeout.
                 } catch (e: java.io.IOException) {
                     return PairingResult.NetworkError(
                         "Pairing I/O error [read SPAKE2]: ${e.javaClass.simpleName}: ${e.message}",
