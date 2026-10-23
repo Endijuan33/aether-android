@@ -11,6 +11,7 @@ import id.mybase.aether.ui.fakes.MainDispatcherRule
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -148,20 +149,24 @@ class ConnectionViewModelTest {
     }
 
     @Test
-    fun `connect success persists connection port`() = runBlocking {
-        vm.connect("192.168.1.5", 5555)
+    fun `connect success persists connection port`() = runTest {
+        // Re-create the ViewModel inside runTest so viewModelScope uses the
+        // TestDispatcher. This is the only reliable way to test viewModelScope
+        // coroutines that do real IO (DataStore).
+        val testShell = FakeAdbShell()
+        val testClient = FakePairingClient()
+        val testPrefs = AetherPreferences(FakeContext())
+        val testVm = ConnectionViewModel(testShell, testClient, testPrefs)
 
-        // Force the UnconfinedTestDispatcher to run any pending viewModelScope tasks.
-        (mainDispatcherRule.dispatcher as? kotlinx.coroutines.test.TestDispatcher)
-            ?.scheduler
-            ?.advanceUntilIdle()
+        testVm.connect("192.168.1.5", 5555)
+        // Let the viewModelScope coroutine run to completion.
+        advanceUntilIdle()
 
-        assertEquals(1, shell.connectCalls)
-        assertEquals("192.168.1.5" to 5555, shell.lastConnectArgs)
-        withTimeout(10_000) {
-            prefs.lastConnectionPort.first { it == 5555 }
-        }
-        assertNull(vm.connectError.value)
+        assertEquals(1, testShell.connectCalls)
+        assertEquals("192.168.1.5" to 5555, testShell.lastConnectArgs)
+        // DataStore write should have completed after advanceUntilIdle.
+        assertEquals(5555, testPrefs.lastConnectionPort.first())
+        assertNull(testVm.connectError.value)
     }
 
     @Test
