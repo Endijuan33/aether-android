@@ -91,6 +91,19 @@ fun StatusBadge(status: OperationStatus, modifier: Modifier = Modifier) {
     Pill(text = status.name, color = color, modifier = modifier)
 }
 
+/**
+ * String overload for persisted history rows ([OperationRecord.status] is stored as the enum name).
+ * Unknown values degrade to FAILED rather than crashing the history screen on corrupt data.
+ */
+@Composable
+fun StatusBadge(statusName: String, modifier: Modifier = Modifier) {
+    val status = runCatching {
+        OperationStatus.valueOf(statusName)
+    }
+        .getOrDefault(OperationStatus.FAILED)
+    StatusBadge(status, modifier)
+}
+
 /** Small pill showing the operation label (e.g. "Uninstall for user"). */
 @Composable
 fun OperationBadge(type: OperationType, modifier: Modifier = Modifier) {
