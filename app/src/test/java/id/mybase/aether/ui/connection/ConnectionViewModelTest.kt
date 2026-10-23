@@ -165,13 +165,23 @@ class ConnectionViewModelTest {
         val testVm = ConnectionViewModel(testShell, testClient, testPrefs)
 
         testVm.connect("192.168.1.5", 5555)
-        // Let the viewModelScope coroutine run to completion.
+        // Let the viewModelScope coroutine run. DataStore does real file IO on
+        // Dispatchers.IO (not the test scheduler), so poll with real time.
         testScheduler.advanceUntilIdle()
+        val deadline = System.currentTimeMillis() + 10_000
+        var port: Int? = null
+        while (System.currentTimeMillis() < deadline) {
+            port = testPrefs.lastConnectionPort.first()
+            if (port == 5555) break
+            // Real thread sleep (not coroutine delay): DataStore IO is on real Dispatchers.IO.
+            Thread.sleep(100)
+            // Re-run pending test-scheduler tasks after the IO had a chance to complete.
+            testScheduler.advanceUntilIdle()
+        }
 
         assertEquals(1, testShell.connectCalls)
         assertEquals("192.168.1.5" to 5555, testShell.lastConnectArgs)
-        // DataStore write should have completed after advanceUntilIdle.
-        assertEquals(5555, testPrefs.lastConnectionPort.first())
+        assertEquals(5555, port)
         assertNull(testVm.connectError.value)
         Dispatchers.resetMain()
     }
