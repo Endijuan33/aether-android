@@ -110,9 +110,8 @@ fun AppDetailsScreen(
                         )
                         IconButton(
                             onClick = { clipboard.setText(AnnotatedString(app.packageName)) },
-                            contentDescription = "Copy package name",
                         ) {
-                            Icon(Icons.Filled.ContentCopy, contentDescription = null)
+                            Icon(Icons.Filled.ContentCopy, contentDescription = "Copy package name")
                         }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

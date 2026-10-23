@@ -76,9 +76,8 @@ fun HistoryScreen(
                     IconButton(
                         onClick = { showClearConfirm = true },
                         enabled = records.isNotEmpty(),
-                        contentDescription = "Clear history",
                     ) {
-                        Icon(Icons.Filled.Delete, contentDescription = null)
+                        Icon(Icons.Filled.Delete, contentDescription = "Clear history")
                     }
                 },
             )

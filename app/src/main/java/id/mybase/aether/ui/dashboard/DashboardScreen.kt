@@ -71,17 +71,11 @@ fun DashboardScreen(
             TopAppBar(
                 title = { Text("AETHER") },
                 actions = {
-                    IconButton(
-                        onClick = { navController.navigate(Routes.HISTORY) },
-                        contentDescription = "Operation history",
-                    ) {
-                        Icon(Icons.Filled.History, contentDescription = null)
+                    IconButton(onClick = { navController.navigate(Routes.HISTORY) }) {
+                        Icon(Icons.Filled.History, contentDescription = "Operation history")
                     }
-                    IconButton(
-                        onClick = { navController.navigate(Routes.SETTINGS) },
-                        contentDescription = "Settings",
-                    ) {
-                        Icon(Icons.Filled.Settings, contentDescription = null)
+                    IconButton(onClick = { navController.navigate(Routes.SETTINGS) }) {
+                        Icon(Icons.Filled.Settings, contentDescription = "Settings")
                     }
                 },
             )

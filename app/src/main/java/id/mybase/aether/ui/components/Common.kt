@@ -43,11 +43,8 @@ fun AetherTopBar(
     TopAppBar(
         title = { Text(title) },
         navigationIcon = {
-            IconButton(
-                onClick = { navController.popBackStack() },
-                contentDescription = "Back",
-            ) {
-                Icon(Icons.Filled.ArrowBack, contentDescription = null)
+            IconButton(onClick = { navController.popBackStack() }) {
+                Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
             }
         },
         actions = actions,
