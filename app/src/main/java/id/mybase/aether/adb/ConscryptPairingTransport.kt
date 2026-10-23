@@ -55,12 +55,9 @@ object ConscryptPairingTransport {
         port: Int,
         timeoutMs: Int,
     ): PairingTlsChannel {
-        // Install Conscrypt as a security provider (if not already).
-        if (!Conscrypt.isConscrypt(SSLContext.getInstance("TLS").socketFactory)) {
-            val provider = Conscrypt.newProvider()
-            java.security.Security.insertProviderAt(provider, 1)
-        }
-
+        // Use Conscrypt's provider directly (no need to install globally).
+        // Note: do NOT call SSLContext.getInstance("TLS").socketFactory here —
+        // that throws "SSLContext is not initialized" on an uninitialized context.
         val sslContext = SSLContext.getInstance("TLS", Conscrypt.newProvider())
         val trustAll =
             object : X509TrustManager {
