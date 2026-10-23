@@ -15,6 +15,7 @@ turbine = "1.2.1"
 junit = "4.13.2"
 orgJson = "20260814"
 bouncycastle = "1.80"
+conscrypt = "2.5.2"
 
 [libraries]
 androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
@@ -45,6 +46,8 @@ org-json = { group = "org.json", name = "json", version.ref = "orgJson" }
 bcprov = { group = "org.bouncycastle", name = "bcprov-jdk18on", version.ref = "bouncycastle" }
 bctls = { group = "org.bouncycastle", name = "bctls-jdk18on", version.ref = "bouncycastle" }
 bcutil = { group = "org.bouncycastle", name = "bcutil-jdk18on", version.ref = "bouncycastle" }
+# Conscrypt standalone (BoringSSL) - public exportKeyingMaterial API, perfect interop with adbd.
+conscrypt-android = { group = "org.conscrypt", name = "conscrypt-android", version.ref = "conscrypt" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

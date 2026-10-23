@@ -24,8 +24,8 @@ class TlsPairingClientTest {
                 // Real BC TLS handshake against the fake server (which uses
                 // platform TLS), but substitute fixed exporter bytes so the
                 // SPAKE2 password matches the fake server's expectation.
-                val real = BcTlsPairingTransport.openPairingChannel(host, port, timeoutMs)
-                BcTlsPairingTransport.PairingTlsChannel(
+                val real = ConscryptPairingTransport.openPairingChannel(host, port, timeoutMs)
+                ConscryptPairingTransport.PairingTlsChannel(
                     input = real.input,
                     output = real.output,
                     exporter = exporterBytes.copyOf(),

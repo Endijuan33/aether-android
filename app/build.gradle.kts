@@ -77,6 +77,9 @@ dependencies {
     implementation(libs.bcprov)
     implementation(libs.bctls)
     implementation(libs.bcutil)
+    // Conscrypt standalone for pairing TLS: BoringSSL-based (perfect interop with
+    // adbd) and exposes public exportKeyingMaterial API (RFC 5705).
+    implementation(libs.conscrypt.android)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)

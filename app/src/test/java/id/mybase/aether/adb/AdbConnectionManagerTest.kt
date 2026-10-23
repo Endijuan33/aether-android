@@ -25,8 +25,8 @@ class AdbConnectionManagerTest {
             TlsPairingClient(
                 keys,
                 openChannel = { host, port, timeoutMs ->
-                    val real = BcTlsPairingTransport.openPairingChannel(host, port, timeoutMs)
-                    BcTlsPairingTransport.PairingTlsChannel(
+                    val real = ConscryptPairingTransport.openPairingChannel(host, port, timeoutMs)
+                    ConscryptPairingTransport.PairingTlsChannel(
                         input = real.input,
                         output = real.output,
                         exporter = exporterBytes.copyOf(),
