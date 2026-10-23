@@ -1,9 +1,9 @@
 package id.mybase.aether.ui.navigation
 
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.LocalActivity
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
-import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -21,7 +21,7 @@ inline fun <reified VM : ViewModel> activityViewModel(
     key: String? = null,
     crossinline creator: () -> VM,
 ): VM {
-    val activity = LocalContext.current as ComponentActivity
+    val activity = LocalActivity.current as ComponentActivity
     val factory =
         remember(key) {
             object : ViewModelProvider.Factory {
