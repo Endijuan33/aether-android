@@ -30,7 +30,7 @@ import org.conscrypt.Conscrypt
  * The pairing password is the 6-digit code concatenated with 64 bytes of TLS exporter (RFC 5705,
  * label "adb-label" + NUL, matching AOSP's pairing_connection).
  */
-internal object ConscryptPairingTransport {
+object ConscryptPairingTransport {
 
     /**
      * An established pairing TLS channel. The [exporter] is the 64-byte RFC 5705 keying material
