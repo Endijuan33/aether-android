@@ -92,9 +92,8 @@ fun AppListScreen(
                                 .show()
                         },
                         enabled = uiState.apps.isNotEmpty(),
-                        contentDescription = "Export inventory as JSON",
                     ) {
-                        Icon(Icons.Filled.Share, contentDescription = null)
+                        Icon(Icons.Filled.Share, contentDescription = "Export inventory as JSON")
                     }
                 },
             )
