@@ -188,7 +188,11 @@ class TlsPairingClient(
             // Cancellation closes the socket via withSocketGuard, which turns
             // into an IOException here: report cancellation, not a failure.
             if (currentJob()?.isCancelled == true) throw CancellationException("Pairing cancelled")
-            return PairingResult.NetworkError("Pairing I/O error")
+            // Include the concrete failure for on-device diagnostics (no secrets here:
+            // just the exception class and message).
+            return PairingResult.NetworkError(
+                "Pairing I/O error: ${e.javaClass.simpleName}: ${e.message}",
+            )
         }
     }
 
