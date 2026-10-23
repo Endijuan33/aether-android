@@ -33,13 +33,12 @@ internal object AdbTlsTransport {
     /**
      * TLS socket to the ADB endpoint, presenting our client certificate so adbd can authorize the
      * connection against the key registered at pairing time. Cancellation-safe: if the caller is
-     * cancelled while the TCP connect or TLS handshake is blocked, the socket is closed to
-     * unblock the I/O thread (no leaks).
+     * cancelled while the TCP connect or TLS handshake is blocked, the socket is closed to unblock
+     * the I/O thread (no leaks).
      *
      * Note: the pairing endpoint uses [BcTlsPairingTransport] (BouncyCastle), not this object,
      * because pairing needs RFC 5705 keying-material export which the platform Conscrypt only
      * exposes via a hidden API.
-     */
      *
      * @param handshakeTimeoutMs OS-level read timeout (soTimeout) for the TLS handshake, in
      *   milliseconds. This is independent of the coroutine Delay, so it fires in real wall-clock
