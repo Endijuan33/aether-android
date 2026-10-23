@@ -156,7 +156,8 @@ class ConnectionViewModelTest {
     fun `connect success persists connection port`() = runTest {
         // Override Dispatchers.Main with the runTest dispatcher so viewModelScope
         // uses it. The MainDispatcherRule sets UnconfinedTestDispatcher, which
-        // conflicts with runTest's scheduler.
+        // conflicts with runTest's scheduler — so reset it first.
+        Dispatchers.resetMain()
         val testDispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(testDispatcher)
         val testShell = FakeAdbShell()
