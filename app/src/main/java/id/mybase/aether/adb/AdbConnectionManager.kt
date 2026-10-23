@@ -63,16 +63,24 @@ class AdbConnectionManager(
             closeSessionLocked()
             _state.value = AdbConnectionState.Connecting(cleanHost, port)
             try {
+                // The timeout must tick in real wall-clock time: connect() may be
+                // invoked from a caller dispatcher that uses virtual time
+                // (notably kotlinx-coroutines-test's runTest in unit tests), on
+                // which a network timeout would fire spuriously while blocking
+                // I/O runs on real threads. Anchoring to ioDispatcher — whose
+                // Delay is always wall-clock — fixes that.
                 session =
-                    withTimeout(timeoutMs) {
-                        AdbSession.open(
-                            cleanHost,
-                            port,
-                            keys,
-                            timeoutMs,
-                            managerScope,
-                            ioDispatcher,
-                        )
+                    withContext(ioDispatcher) {
+                        withTimeout(timeoutMs) {
+                            AdbSession.open(
+                                cleanHost,
+                                port,
+                                keys,
+                                timeoutMs,
+                                managerScope,
+                                ioDispatcher,
+                            )
+                        }
                     }
                 _state.value = AdbConnectionState.Connected(cleanHost, port)
                 return Result.success(Unit)

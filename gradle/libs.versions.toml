@@ -13,6 +13,7 @@ splashscreen = "1.2.0"
 coroutines = "1.11.0"
 turbine = "1.2.1"
 junit = "4.13.2"
+orgJson = "20260814"
 
 [libraries]
 androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
@@ -32,6 +33,11 @@ kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-
 kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutines" }
 turbine = { group = "app.cash.turbine", name = "turbine", version.ref = "turbine" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
+# Unit-test-only: real org.json implementation. The android.jar on the unit-test
+# classpath stubs out org.json (every method throws "Stub!"); this dependency
+# shadows those stubs so JSON export/parse code is actually testable on the JVM.
+# The APK itself still uses the framework's org.json at runtime.
+org-json = { group = "org.json", name = "json", version.ref = "orgJson" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
