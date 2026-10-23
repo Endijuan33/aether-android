@@ -1,6 +1,5 @@
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
 }
 
@@ -35,9 +34,6 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions {
-        jvmTarget = "17"
-    }
     buildFeatures {
         compose = true
     }
@@ -50,6 +46,14 @@ android {
         unitTests {
             isIncludeAndroidResources = true
         }
+    }
+}
+
+// AGP 9 has built-in Kotlin: the `kotlin` extension is registered by AGP
+// itself; do NOT apply the legacy org.jetbrains.kotlin.android plugin.
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
     }
 }
 

@@ -35,5 +35,7 @@ junit = { group = "junit", name = "junit", version.ref = "junit" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
-kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+# NOTE: no kotlin-android plugin — AGP 9 provides built-in Kotlin support and
+# applying org.jetbrains.kotlin.android fails the build. The Compose compiler
+# plugin below is still required.
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
