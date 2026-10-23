@@ -6,6 +6,7 @@ import java.net.InetSocketAddress
 import java.net.Socket
 import org.bouncycastle.tls.Certificate
 import org.bouncycastle.tls.DefaultTlsClient
+import org.bouncycastle.tls.ProtocolVersion
 import org.bouncycastle.tls.TlsAuthentication
 import org.bouncycastle.tls.TlsClientContext
 import org.bouncycastle.tls.TlsClientProtocol
@@ -110,6 +111,13 @@ object BcTlsPairingTransport {
                     certificateRequest: org.bouncycastle.tls.CertificateRequest,
                 ): org.bouncycastle.tls.TlsCredentials? = null
             }
+
+        override fun getSupportedVersions(): Array<ProtocolVersion> {
+            // Prefer TLS 1.2: BC's TLS 1.3 stack has interop issues with BoringSSL
+            // (connection reset on first application-data write). TLS 1.2 is
+            // well-tested and sufficient for pairing.
+            return arrayOf(ProtocolVersion.TLSv12)
+        }
 
         override fun notifyHandshakeComplete() {
             super.notifyHandshakeComplete()
