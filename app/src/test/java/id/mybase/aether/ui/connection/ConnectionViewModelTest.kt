@@ -11,6 +11,7 @@ import id.mybase.aether.ui.fakes.MainDispatcherRule
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -148,16 +149,22 @@ class ConnectionViewModelTest {
     }
 
     @Test
-    fun `connect success persists connection port`() = runBlocking {
-        vm.connect("192.168.1.5", 5555)
+    fun `connect success persists connection port`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            vm.connect("192.168.1.5", 5555)
 
-        assertEquals(1, shell.connectCalls)
-        assertEquals("192.168.1.5" to 5555, shell.lastConnectArgs)
-        withTimeout(10_000) {
-            prefs.lastConnectionPort.first { it == 5555 }
+            // Let the viewModelScope coroutine (on Main) run to completion,
+            // including the DataStore IO which uses real dispatchers.
+            testScheduler.advanceUntilIdle()
+
+            assertEquals(1, shell.connectCalls)
+            assertEquals("192.168.1.5" to 5555, shell.lastConnectArgs)
+            // DataStore write completes via real IO; verify with a real timeout.
+            withTimeout(10_000) {
+                prefs.lastConnectionPort.first { it == 5555 }
+            }
+            assertNull(vm.connectError.value)
         }
-        assertNull(vm.connectError.value)
-    }
 
     @Test
     fun `connect failure surfaces error`() {
