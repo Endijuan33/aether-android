@@ -128,8 +128,25 @@ class TlsPairingClient(
             val passwordMaterial = code.toByteArray(Charsets.UTF_8) + exporterBytes
             val spake = Spake2Alice(passwordMaterial)
             passwordMaterial.fill(0)
-            PairingProtocol.writeFrame(out, PairingProtocol.TYPE_SPAKE2, spake.generateMessage())
-            val serverSpake = PairingProtocol.readFrame(input)
+            try {
+                PairingProtocol.writeFrame(
+                    out,
+                    PairingProtocol.TYPE_SPAKE2,
+                    spake.generateMessage(),
+                )
+            } catch (e: java.io.IOException) {
+                return PairingResult.NetworkError(
+                    "Pairing I/O error [write SPAKE2]: ${e.javaClass.simpleName}: ${e.message}",
+                )
+            }
+            val serverSpake =
+                try {
+                    PairingProtocol.readFrame(input)
+                } catch (e: java.io.IOException) {
+                    return PairingResult.NetworkError(
+                        "Pairing I/O error [read SPAKE2]: ${e.javaClass.simpleName}: ${e.message}",
+                    )
+                }
             if (serverSpake.type != PairingProtocol.TYPE_SPAKE2) {
                 return PairingResult.NetworkError("Unexpected pairing message from server")
             }
