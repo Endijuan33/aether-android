@@ -33,9 +33,9 @@ import java.io.InputStream
  * Minimal [Context] for JVM unit tests.
  *
  * Only [getFilesDir], [getApplicationContext], and [getSystemService] are functional (the surface
- * the app touches in unit tests). Every other abstract [Context] member is stubbed to a benign
- * default; the stubs exist solely so the class compiles against the real android.jar — they must
- * never be called by a passing test.
+ * the app touches in unit tests). Every other abstract [Context] member throws
+ * [NotImplementedError] via TODO() — the stubs exist solely so the class compiles against the real
+ * android.jar and must never be called by a passing test.
  */
 class FakeContext(
     private val dir: File = File(System.getProperty("java.io.tmpdir")!!, "aether-test"),
@@ -73,15 +73,15 @@ class FakeContext(
 
     override fun clearWallpaper(): Unit {}
 
-    override fun createConfigurationContext(p0: Configuration): Context = null
+    override fun createConfigurationContext(p0: Configuration): Context = TODO("FakeContext stub")
 
-    override fun createContextForSplit(p0: String): Context = null
+    override fun createContextForSplit(p0: String): Context = TODO("FakeContext stub")
 
-    override fun createDeviceProtectedStorageContext(): Context = null
+    override fun createDeviceProtectedStorageContext(): Context = TODO("FakeContext stub")
 
-    override fun createDisplayContext(p0: Display): Context = null
+    override fun createDisplayContext(p0: Display): Context = TODO("FakeContext stub")
 
-    override fun createPackageContext(p0: String, p1: Int): Context = null
+    override fun createPackageContext(p0: String, p1: Int): Context = TODO("FakeContext stub")
 
     override fun databaseList(): Array<String> = emptyArray()
 
@@ -115,23 +115,23 @@ class FakeContext(
 
     override fun fileList(): Array<String> = emptyArray()
 
-    override fun getApplicationInfo(): ApplicationInfo = null
+    override fun getApplicationInfo(): ApplicationInfo = TODO("FakeContext stub")
 
-    override fun getAssets(): AssetManager = null
+    override fun getAssets(): AssetManager = TODO("FakeContext stub")
 
-    override fun getCacheDir(): File = null
+    override fun getCacheDir(): File = TODO("FakeContext stub")
 
-    override fun getClassLoader(): ClassLoader = null
+    override fun getClassLoader(): ClassLoader = TODO("FakeContext stub")
 
-    override fun getCodeCacheDir(): File = null
+    override fun getCodeCacheDir(): File = TODO("FakeContext stub")
 
-    override fun getContentResolver(): ContentResolver = null
+    override fun getContentResolver(): ContentResolver = TODO("FakeContext stub")
 
-    override fun getDataDir(): File = null
+    override fun getDataDir(): File = TODO("FakeContext stub")
 
-    override fun getDatabasePath(p0: String): File = null
+    override fun getDatabasePath(p0: String): File = TODO("FakeContext stub")
 
-    override fun getDir(p0: String, p1: Int): File = null
+    override fun getDir(p0: String, p1: Int): File = TODO("FakeContext stub")
 
     override fun getExternalCacheDir(): File? = null
 
@@ -143,33 +143,34 @@ class FakeContext(
 
     override fun getExternalMediaDirs(): Array<File> = emptyArray()
 
-    override fun getFileStreamPath(p0: String): File = null
+    override fun getFileStreamPath(p0: String): File = TODO("FakeContext stub")
 
-    override fun getMainLooper(): Looper = null
+    override fun getMainLooper(): Looper = TODO("FakeContext stub")
 
-    override fun getNoBackupFilesDir(): File = null
+    override fun getNoBackupFilesDir(): File = TODO("FakeContext stub")
 
-    override fun getObbDir(): File = null
+    override fun getObbDir(): File = TODO("FakeContext stub")
 
     override fun getObbDirs(): Array<File> = emptyArray()
 
     override fun getPackageCodePath(): String = ""
 
-    override fun getPackageManager(): PackageManager = null
+    override fun getPackageManager(): PackageManager = TODO("FakeContext stub")
 
     override fun getPackageName(): String = ""
 
     override fun getPackageResourcePath(): String = ""
 
-    override fun getResources(): Resources = null
+    override fun getResources(): Resources = TODO("FakeContext stub")
 
-    override fun getSharedPreferences(p0: String, p1: Int): SharedPreferences = null
+    override fun getSharedPreferences(p0: String, p1: Int): SharedPreferences =
+        TODO("FakeContext stub")
 
     override fun getSystemServiceName(p0: java.lang.Class<*>): String? = null
 
-    override fun getTheme(): Resources.Theme = null
+    override fun getTheme(): Resources.Theme = TODO("FakeContext stub")
 
-    override fun getWallpaper(): Drawable = null
+    override fun getWallpaper(): Drawable = TODO("FakeContext stub")
 
     override fun getWallpaperDesiredMinimumHeight(): Int = 0
 
@@ -183,24 +184,24 @@ class FakeContext(
 
     override fun moveSharedPreferencesFrom(p0: Context, p1: String): Boolean = false
 
-    override fun openFileInput(p0: String): FileInputStream = null
+    override fun openFileInput(p0: String): FileInputStream = TODO("FakeContext stub")
 
-    override fun openFileOutput(p0: String, p1: Int): FileOutputStream = null
+    override fun openFileOutput(p0: String, p1: Int): FileOutputStream = TODO("FakeContext stub")
 
     override fun openOrCreateDatabase(
         p0: String,
         p1: Int,
         p2: SQLiteDatabase.CursorFactory,
-    ): SQLiteDatabase = null
+    ): SQLiteDatabase = TODO("FakeContext stub")
 
     override fun openOrCreateDatabase(
         p0: String,
         p1: Int,
         p2: SQLiteDatabase.CursorFactory,
         p3: DatabaseErrorHandler?,
-    ): SQLiteDatabase = null
+    ): SQLiteDatabase = TODO("FakeContext stub")
 
-    override fun peekWallpaper(): Drawable = null
+    override fun peekWallpaper(): Drawable = TODO("FakeContext stub")
 
     override fun registerReceiver(
         p0: BroadcastReceiver,
