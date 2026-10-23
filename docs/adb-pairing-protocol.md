@@ -56,8 +56,11 @@ byte-for-byte against its deterministic oracle vectors.
 `passwordMaterial = pairing_code_bytes || TLS_exporter("adb-label\0", 64 bytes)`.
 
 The 6-digit code alone is **not** the SPAKE2 password. The TLS exporter binds the
-pairing to the specific TLS connection, preventing MITM forwarding. On Android,
-export via Conscrypt reflection (`com.android.org.conscrypt.Conscrypt.exportKeyingMaterial`).
+pairing to the specific TLS connection, preventing MITM forwarding. The export uses
+BouncyCastle's public `TlsContext.exportKeyingMaterial` (RFC 5705); the platform
+Conscrypt exporter (`com.android.org.conscrypt.Conscrypt.exportKeyingMaterial`) is a
+hidden API blocked for apps targeting recent SDKs (verified failing on-device
+2026-10-24), so it is not used.
 Verified against BoringSSL oracle: `passwordHex=353135313039` is ASCII `"515109"`.
 
 ### Peer-info key
@@ -102,9 +105,10 @@ The SPAKE2 construction, key schedule, framing, and peer-info struct are verifie
 against BoringSSL's oracle vectors and AOSP sources. What remains:
 
 1. **Live device pairing** — the full handshake has not been exercised against a real
-   adbd (no device in this environment). The TLS exporter via Conscrypt reflection
-   is the highest-risk item; if `exportKeyingMaterial` is unavailable, pairing fails
-   closed (no fake success).
+   adbd (no device in this environment). The TLS exporter now uses BouncyCastle's
+   public RFC 5705 API (the platform Conscrypt hidden-API reflection was verified
+   failing on-device 2026-10-24 and removed); BC↔BoringSSL exporter interop is the
+   remaining risk, fails closed (no fake success).
 2. **Peer-info RSA public-key encoding** — AOSP's exact expected encoding inside the
    8191-byte data field is unverified; we send X.509 SPKI DER (the standard form).
 3. **mDNS discovery** — deliberately not implemented (see above).

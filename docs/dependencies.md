@@ -28,12 +28,14 @@ for TLS-based wireless debugging).
 | `androidx.datastore:datastore-preferences` | 1.3.0 | Apache-2.0 | Preferences (theme, onboarding, last host/ports) |
 | `androidx.core:core-splashscreen` | 1.2.0 | Apache-2.0 | Splash screen branding |
 | `org.jetbrains.kotlinx:kotlinx-coroutines-android` | 1.11.0 | Apache-2.0 | Coroutines/Flow for pairing, session I/O, ViewModels |
+| `org.bouncycastle:bcprov-jdk18on`, `bctls-jdk18on`, `bcutil-jdk18on` | 1.80 | MIT | TLS for ADB pairing with RFC 5705 keying-material export via public API. The platform Conscrypt exporter is a hidden API blocked for apps targeting recent SDKs (verified failing on-device); BC is the only viable path for the pairing channel binding. |
 
 Notable non-dependencies: **no third-party ADB library** — the pairing
-(TLS + SPAKE2) and classic ADB transport are hand-rolled in `adb/`
+(SPAKE2) and classic ADB transport are hand-rolled in `adb/`
 because existing libraries (e.g. `com.tananaev:adblib:1.3`) implement only
-plaintext classic ADB and predate Android 11 wireless debugging. See
-`gradle/aether-adb-deps.txt` and
+plaintext classic ADB and predate Android 11 wireless debugging. The pairing
+TLS itself uses BouncyCastle (public API) rather than the platform stack.
+See `gradle/aether-adb-deps.txt` and
 [adb-pairing-protocol.md](adb-pairing-protocol.md). No analytics, no
 networking library, no DI framework (manual `AppContainer`), no Room
 (SQLiteOpenHelper suffices for the one-table history).

@@ -10,9 +10,9 @@ the following are implemented and unit-tested (including socket-based
 protocol fakes and BoringSSL oracle-vector verification) but **not yet
 validated against a real `adbd`**:
 
-- The full TLS + SPAKE2 pairing handshake (highest risk: the TLS exporter
-  via Conscrypt reflection; pairing fails closed if it is unavailable —
-  no fake success is possible).
+- The full TLS + SPAKE2 pairing handshake (TLS exporter via BouncyCastle's public
+  RFC 5705 API; BC↔BoringSSL interop unverified on-device — pairing fails closed
+  if it mismatches, no fake success is possible).
 - The RSA public-key encoding inside the 8192-byte peer-info struct
   (we send X.509 SPKI DER; AOSP's exact expectation is unverified).
 - The classic ADB session over the TLS tunnel.
