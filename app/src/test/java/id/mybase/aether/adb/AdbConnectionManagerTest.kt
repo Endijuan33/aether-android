@@ -21,7 +21,20 @@ class AdbConnectionManagerTest {
 
     private fun manager(): AdbConnectionManager {
         val keys = FakeAdbKeyMaterial()
-        val pairingClient = TlsPairingClient(keys, tlsExporter = { exporterBytes.copyOf() })
+        val pairingClient =
+            TlsPairingClient(
+                keys,
+                openChannel = { host, port, timeoutMs ->
+                    val real = BcTlsPairingTransport.openPairingChannel(host, port, timeoutMs)
+                    BcTlsPairingTransport.PairingTlsChannel(
+                        input = real.input,
+                        output = real.output,
+                        exporter = exporterBytes.copyOf(),
+                    ) {
+                        real.close()
+                    }
+                },
+            )
         return AdbConnectionManager(keys, pairingClient)
     }
 

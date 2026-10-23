@@ -14,6 +14,7 @@ coroutines = "1.11.0"
 turbine = "1.2.1"
 junit = "4.13.2"
 orgJson = "20260814"
+bouncycastle = "1.80"
 
 [libraries]
 androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
@@ -38,6 +39,12 @@ junit = { group = "junit", name = "junit", version.ref = "junit" }
 # shadows those stubs so JSON export/parse code is actually testable on the JVM.
 # The APK itself still uses the framework's org.json at runtime.
 org-json = { group = "org.json", name = "json", version.ref = "orgJson" }
+# BouncyCastle TLS for ADB pairing. The platform Conscrypt's exportKeyingMaterial
+# is a hidden API (blocked for apps targeting recent SDKs); BC's
+# TlsContext.exportKeyingMaterial is public and implements RFC 5705.
+bcprov = { group = "org.bouncycastle", name = "bcprov-jdk18on", version.ref = "bouncycastle" }
+bctls = { group = "org.bouncycastle", name = "bctls-jdk18on", version.ref = "bouncycastle" }
+bcutil = { group = "org.bouncycastle", name = "bcutil-jdk18on", version.ref = "bouncycastle" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

@@ -31,32 +31,15 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 internal object AdbTlsTransport {
 
     /**
-     * TLS socket to the pairing endpoint. No client certificate is presented (the client has
-     * nothing authorized yet); the SPAKE2 exchange inside the channel establishes trust.
-     *
-     * Suspending and cancellation-safe: if the caller is cancelled while the TCP connect or TLS
-     * handshake is blocked, the socket is closed to unblock the I/O thread (no leaks).
-     */
-    suspend fun openPairingChannel(host: String, port: Int, connectTimeoutMs: Int): SSLSocket {
-        val sslContext = SSLContext.getInstance("TLS")
-        sslContext.init(null, arrayOf(trustAllManager()), SecureRandom())
-        val socket = sslContext.socketFactory.createSocket() as SSLSocket
-        try {
-            withSocketGuard(socket) {
-                socket.connect(InetSocketAddress(host, port), connectTimeoutMs)
-                socket.startHandshake()
-            }
-            return socket
-        } catch (e: Throwable) {
-            runCatching { socket.close() }
-            throw e
-        }
-    }
-
-    /**
      * TLS socket to the ADB endpoint, presenting our client certificate so adbd can authorize the
-     * connection against the key registered at pairing time. Cancellation-safe like
-     * [openPairingChannel].
+     * connection against the key registered at pairing time. Cancellation-safe: if the caller is
+     * cancelled while the TCP connect or TLS handshake is blocked, the socket is closed to
+     * unblock the I/O thread (no leaks).
+     *
+     * Note: the pairing endpoint uses [BcTlsPairingTransport] (BouncyCastle), not this object,
+     * because pairing needs RFC 5705 keying-material export which the platform Conscrypt only
+     * exposes via a hidden API.
+     */
      *
      * @param handshakeTimeoutMs OS-level read timeout (soTimeout) for the TLS handshake, in
      *   milliseconds. This is independent of the coroutine Delay, so it fires in real wall-clock

@@ -18,8 +18,9 @@ import kotlinx.coroutines.withTimeout
  * Wireless-debugging pairing client: the `adb pair` equivalent.
  *
  * Handshake (see docs/adb-pairing-protocol.md for sources):
- * 1. TLS to host:pairingPort (the server certificate is self-signed and not pre-trusted; the
- *    6-digit code is the authentication — see [AdbTlsTransport]).
+ * 1. TLS to host:pairingPort via [BcTlsPairingTransport] (BouncyCastle — the platform Conscrypt's
+ *    keying-material export is a hidden API, blocked for apps targeting recent SDKs). The server
+ *    certificate is self-signed and not pre-trusted; the 6-digit code is the authentication.
  * 2. SPAKE2 exchange, framed per [PairingProtocol] (client = Alice). The SPAKE2 password is the
  *    pairing-code bytes concatenated with 64 bytes of TLS keying material exported with label
  *    "adb-label\0" (channel binding; without it, a MITM on the TLS connection could forward the
@@ -38,14 +39,19 @@ import kotlinx.coroutines.withTimeout
  *
  * Success is never faked: it requires the server's encrypted peer info to decrypt and parse.
  *
- * @param tlsExporter exports 64 bytes of TLS keying material (label "adb-label\0") from the pairing
- *   TLS session. Defaults to Conscrypt via reflection on Android; tests inject a fixed value.
+ * @param openChannel opens the TLS pairing channel. Defaults to [BcTlsPairingTransport]; tests
+ *   inject a fake.
  */
 class TlsPairingClient(
     private val keys: AdbKeyMaterial,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
-    private val tlsExporter: (javax.net.ssl.SSLSocket) -> ByteArray =
-        ::conscryptExportKeyingMaterial,
+    private val openChannel:
+        (
+            host: String,
+            port: Int,
+            timeoutMs: Int,
+        ) -> BcTlsPairingTransport.PairingTlsChannel =
+        BcTlsPairingTransport::openPairingChannel,
 ) : AdbPairingClient {
 
     override suspend fun pair(
@@ -82,9 +88,9 @@ class TlsPairingClient(
         }
 
     private suspend fun doPair(host: String, port: Int, code: String): PairingResult {
-        val socket =
+        val channel =
             try {
-                AdbTlsTransport.openPairingChannel(host, port, CONNECT_TIMEOUT_MS)
+                openChannel(host, port, CONNECT_TIMEOUT_MS)
             } catch (e: ConnectException) {
                 return PairingResult.ConnectionRefused
             } catch (e: UnknownHostException) {
@@ -99,29 +105,27 @@ class TlsPairingClient(
                 return PairingResult.NetworkError("Could not reach pairing endpoint")
             }
         try {
-            return withSocketGuard(socket) { handshake(socket, code) }
+            return handshake(channel, code)
         } finally {
-            runCatching { socket.close() }
+            runCatching { channel.close() }
         }
     }
 
-    private suspend fun handshake(socket: javax.net.ssl.SSLSocket, code: String): PairingResult {
-        socket.soTimeout = READ_TIMEOUT_MS
-        val out = socket.outputStream
-        val input = socket.inputStream
+    private suspend fun handshake(
+        channel: BcTlsPairingTransport.PairingTlsChannel,
+        code: String,
+    ): PairingResult {
+        val out = channel.output
+        val input = channel.input
         try {
             // 1. SPAKE2 key exchange. Password = code || TLS exporter (channel binding).
-            val exporterBytes =
-                try {
-                    tlsExporter(socket)
-                } catch (e: Exception) {
-                    return PairingResult.NetworkError("TLS keying material export failed")
-                }
+            // The exporter was captured during the BC TLS handshake
+            // (see BcTlsPairingTransport).
+            val exporterBytes = channel.exporter
             if (exporterBytes.size != PairingCrypto.TLS_EXPORTER_LENGTH) {
                 return PairingResult.NetworkError("TLS keying material export failed")
             }
             val passwordMaterial = code.toByteArray(Charsets.UTF_8) + exporterBytes
-            exporterBytes.fill(0)
             val spake = Spake2Alice(passwordMaterial)
             passwordMaterial.fill(0)
             PairingProtocol.writeFrame(out, PairingProtocol.TYPE_SPAKE2, spake.generateMessage())
@@ -216,33 +220,5 @@ class TlsPairingClient(
 
     companion object {
         private const val CONNECT_TIMEOUT_MS = 10_000
-        private const val READ_TIMEOUT_MS = 10_000
     }
-}
-
-/**
- * Exports TLS keying material via Conscrypt (Android's TLS provider).
- *
- * Uses reflection to call `com.android.org.conscrypt.Conscrypt.exportKeyingMaterial(SSLSocket,
- * String, byte[], int)` with label "adb-label\0". Throws if Conscrypt is unavailable; pairing
- * cannot proceed without the channel binding (the password would not match the server's).
- */
-private fun conscryptExportKeyingMaterial(socket: javax.net.ssl.SSLSocket): ByteArray {
-    val conscrypt = Class.forName("com.android.org.conscrypt.Conscrypt")
-    val method =
-        conscrypt.getMethod(
-            "exportKeyingMaterial",
-            javax.net.ssl.SSLSocket::class.java,
-            String::class.java,
-            ByteArray::class.java,
-            Int::class.javaPrimitiveType,
-        )
-    val label = String(PairingCrypto.TLS_EXPORTER_LABEL, Charsets.UTF_8)
-    val result =
-        method.invoke(null, socket, label, null, PairingCrypto.TLS_EXPORTER_LENGTH) as? ByteArray
-            ?: throw IllegalStateException("Conscrypt returned null keying material")
-    if (result.size != PairingCrypto.TLS_EXPORTER_LENGTH) {
-        throw IllegalStateException("Conscrypt returned ${result.size} keying bytes")
-    }
-    return result
 }

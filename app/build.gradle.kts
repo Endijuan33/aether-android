@@ -72,6 +72,11 @@ dependencies {
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.splashscreen)
     implementation(libs.kotlinx.coroutines.android)
+    // BouncyCastle TLS for ADB pairing (RFC 5705 keying-material export via public API;
+    // the platform Conscrypt exporter is a hidden API).
+    implementation(libs.bcprov)
+    implementation(libs.bctls)
+    implementation(libs.bcutil)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)

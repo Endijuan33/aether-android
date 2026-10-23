@@ -20,7 +20,19 @@ class TlsPairingClientTest {
     private fun client() =
         TlsPairingClient(
             FakeAdbKeyMaterial(),
-            tlsExporter = { exporterBytes.copyOf() },
+            openChannel = { host, port, timeoutMs ->
+                // Real BC TLS handshake against the fake server (which uses
+                // platform TLS), but substitute fixed exporter bytes so the
+                // SPAKE2 password matches the fake server's expectation.
+                val real = BcTlsPairingTransport.openPairingChannel(host, port, timeoutMs)
+                BcTlsPairingTransport.PairingTlsChannel(
+                    input = real.input,
+                    output = real.output,
+                    exporter = exporterBytes.copyOf(),
+                ) {
+                    real.close()
+                }
+            },
         )
 
     /** A port nothing listens on: bind then close so connects are refused. */
