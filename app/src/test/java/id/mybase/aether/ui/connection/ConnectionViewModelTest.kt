@@ -148,23 +148,19 @@ class ConnectionViewModelTest {
     }
 
     @Test
-    fun `connect success persists connection port`() {
+    fun `connect success persists connection port`() = runBlocking {
         vm.connect("192.168.1.5", 5555)
 
-        // The viewModelScope coroutine writes to DataStore via real IO
-        // (Dispatchers.IO). Poll with real thread sleeps — not coroutine
-        // delays — so we don't depend on TestDispatcher scheduling.
-        val deadline = System.currentTimeMillis() + 10_000
-        var port: Int? = null
-        while (System.currentTimeMillis() < deadline) {
-            port = runBlocking { prefs.lastConnectionPort.first() }
-            if (port == 5555) break
-            Thread.sleep(100)
-        }
+        // Force the UnconfinedTestDispatcher to run any pending viewModelScope tasks.
+        (mainDispatcherRule.dispatcher as? kotlinx.coroutines.test.TestDispatcher)
+            ?.scheduler
+            ?.advanceUntilIdle()
 
         assertEquals(1, shell.connectCalls)
         assertEquals("192.168.1.5" to 5555, shell.lastConnectArgs)
-        assertEquals(5555, port)
+        withTimeout(10_000) {
+            prefs.lastConnectionPort.first { it == 5555 }
+        }
         assertNull(vm.connectError.value)
     }
 
