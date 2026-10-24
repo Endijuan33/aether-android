@@ -9,13 +9,8 @@ import id.mybase.aether.ui.fakes.FakeContext
 import id.mybase.aether.ui.fakes.FakePairingClient
 import id.mybase.aether.ui.fakes.MainDispatcherRule
 import kotlin.time.Duration.Companion.seconds
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.test.StandardTestDispatcher
-import kotlinx.coroutines.test.resetMain
-import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -153,38 +148,28 @@ class ConnectionViewModelTest {
     }
 
     @Test
-    fun `connect success persists connection port`() = runTest {
-        // Override Dispatchers.Main with the runTest dispatcher so viewModelScope
-        // uses it. The MainDispatcherRule sets UnconfinedTestDispatcher, which
-        // conflicts with runTest's scheduler — so reset it first.
-        Dispatchers.resetMain()
-        val testDispatcher = StandardTestDispatcher(testScheduler)
-        Dispatchers.setMain(testDispatcher)
+    fun `connect success persists connection port`() = runBlocking {
+        // Uses the MainDispatcherRule's UnconfinedTestDispatcher (set at class level),
+        // which executes viewModelScope coroutines eagerly on the calling thread.
+        // DataStore does real file IO on Dispatchers.IO, so poll with real time.
         val testShell = FakeAdbShell()
         val testClient = FakePairingClient()
         val testPrefs = AetherPreferences(FakeContext())
         val testVm = ConnectionViewModel(testShell, testClient, testPrefs)
 
         testVm.connect("192.168.1.5", 5555)
-        // Let the viewModelScope coroutine run. DataStore does real file IO on
-        // Dispatchers.IO (not the test scheduler), so poll with real time.
-        testScheduler.advanceUntilIdle()
-        val deadline = System.currentTimeMillis() + 10_000
+        val deadline = System.currentTimeMillis() + 15_000
         var port: Int? = null
         while (System.currentTimeMillis() < deadline) {
             port = testPrefs.lastConnectionPort.first()
             if (port == 5555) break
-            // Real thread sleep (not coroutine delay): DataStore IO is on real Dispatchers.IO.
             Thread.sleep(100)
-            // Re-run pending test-scheduler tasks after the IO had a chance to complete.
-            testScheduler.advanceUntilIdle()
         }
 
         assertEquals(1, testShell.connectCalls)
         assertEquals("192.168.1.5" to 5555, testShell.lastConnectArgs)
         assertEquals(5555, port)
         assertNull(testVm.connectError.value)
-        Dispatchers.resetMain()
     }
 
     @Test
