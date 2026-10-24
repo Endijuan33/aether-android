@@ -75,6 +75,7 @@ dependencies {
     // BouncyCastle TLS for ADB pairing (RFC 5705 keying-material export via public API;
     // the platform Conscrypt exporter is a hidden API).
     implementation(libs.bcprov)
+    implementation(libs.bcpkix)
     implementation(libs.bctls)
     implementation(libs.bcutil)
     // Conscrypt standalone for pairing TLS: BoringSSL-based (perfect interop with
