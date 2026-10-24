@@ -6,6 +6,7 @@ import java.net.InetSocketAddress
 import java.net.Socket
 import java.security.SecureRandom
 import java.security.cert.X509Certificate
+import javax.net.ssl.KeyManager
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLSocket
 import javax.net.ssl.TrustManager
@@ -47,8 +48,8 @@ object ConscryptPairingTransport {
 
     /**
      * Opens a TLS connection to the pairing endpoint and returns the channel with the 64-byte
-     * exporter. Uses Conscrypt's SSLContext (BoringSSL) with a trust-all manager — the pairing
-     * code, not the certificate, is the authentication.
+     * exporter. Uses Conscrypt's SSLContext (BoringSSL) with a trust-all manager and a self-signed
+     * RSA client certificate (like Shizuku) — adbd expects a client cert in the pairing handshake.
      */
     fun openPairingChannel(
         host: String,
@@ -73,7 +74,14 @@ object ConscryptPairingTransport {
 
                 override fun getAcceptedIssuers(): Array<X509Certificate> = emptyArray()
             }
-        sslContext.init(null, arrayOf<TrustManager>(trustAll), SecureRandom())
+        // Present a self-signed RSA client certificate (Shizuku does this; adbd expects it).
+        val keyStore = PairingClientCert.generateKeyStore()
+        val keyManager = PairingClientCert.createKeyManager(keyStore)
+        sslContext.init(
+            arrayOf<KeyManager>(keyManager),
+            arrayOf<TrustManager>(trustAll),
+            SecureRandom(),
+        )
 
         val tcp = Socket()
         tcp.connect(InetSocketAddress(host, port), timeoutMs)
