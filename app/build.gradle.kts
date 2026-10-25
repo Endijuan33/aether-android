@@ -6,6 +6,7 @@ plugins {
 android {
     namespace = "id.mybase.aether"
     compileSdk = 37
+    buildToolsVersion = "36.0.0"
 
     defaultConfig {
         applicationId = "id.mybase.aether"
@@ -13,6 +14,7 @@ android {
         targetSdk = 37
         versionCode = 1
         versionName = "0.1.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
@@ -72,18 +74,41 @@ dependencies {
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.splashscreen)
     implementation(libs.kotlinx.coroutines.android)
-    // BouncyCastle TLS for ADB pairing (RFC 5705 keying-material export via public API;
-    // the platform Conscrypt exporter is a hidden API).
-    implementation(libs.bcprov)
-    implementation(libs.bcpkix)
-    implementation(libs.bctls)
-    implementation(libs.bcutil)
-    // Conscrypt standalone for pairing TLS: BoringSSL-based (perfect interop with
-    // adbd) and exposes public exportKeyingMaterial API (RFC 5705).
+    // BouncyCastle provides JVM-only TLS fixtures; it is not bundled in the APK.
+    testImplementation(libs.bcprov)
+    testImplementation(libs.bctls)
+    testImplementation(libs.bcutil)
+    // Standalone Conscrypt exposes the public TLS exporter needed for pairing.
     implementation(libs.conscrypt.android)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.turbine)
     testImplementation(libs.org.json)
+    androidTestImplementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.junit)
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
+}
+
+dependencyLocking { lockAllConfigurations() }
+
+tasks.register("exportRuntimeDependencies") {
+    group = "verification"
+    description = "Exports resolved release dependencies for the advisory check."
+    val destination = layout.buildDirectory.file("reports/release-dependencies.txt")
+    outputs.file(destination)
+    // Resolve on each invocation so dependency changes cannot leave a stale advisory input.
+    outputs.upToDateWhen { false }
+    doLast {
+        val components = configurations.getByName("releaseRuntimeClasspath")
+            .incoming.resolutionResult.allComponents.mapNotNull {
+                it.id as? org.gradle.api.artifacts.component.ModuleComponentIdentifier
+            }.map { "${it.group}:${it.module}:${it.version}" }.distinct().sorted()
+        destination.get().asFile.apply {
+            parentFile.mkdirs()
+            writeText(components.joinToString("\n", postfix = "\n"))
+        }
+    }
 }

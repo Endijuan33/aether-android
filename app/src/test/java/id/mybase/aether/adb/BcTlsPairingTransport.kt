@@ -14,7 +14,7 @@ import org.bouncycastle.tls.crypto.TlsCrypto
 import org.bouncycastle.tls.crypto.impl.bc.BcTlsCrypto
 
 /**
- * TLS transport for ADB pairing built on BouncyCastle (no hidden platform APIs).
+ * JVM-only TLS fixture transport. Production pairing uses standalone Conscrypt.
  *
  * Background: the pairing channel binding requires 64 bytes of TLS keying material (RFC 5705, label
  * "adb-label\0"). The platform Conscrypt exposes this via

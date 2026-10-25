@@ -1,8 +1,10 @@
 # AETHER — System Control · git ignore rules.
 # Generated build outputs
 .gradle/
+.kotlin/
 build/
 app/build/
+__pycache__/
 *.apk
 *.aab
 # Local SDK / signing — never commit
