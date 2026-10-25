@@ -12,9 +12,10 @@ import kotlinx.coroutines.withContext
  * SQLite-backed [OperationHistoryStore]. Table op_history(id INTEGER PK AUTOINCREMENT, ts INTEGER,
  * package TEXT, label TEXT, operation TEXT, status TEXT, message TEXT).
  */
-class SqliteOperationHistoryStore(context: Context) : OperationHistoryStore {
+class SqliteOperationHistoryStore(context: Context, databaseName: String = DB_NAME) :
+    OperationHistoryStore {
 
-    private val helper = HistoryDb(context.applicationContext)
+    private val helper = HistoryDb(context.applicationContext, databaseName)
 
     override suspend fun record(
         timestamp: Long,
@@ -34,7 +35,7 @@ class SqliteOperationHistoryStore(context: Context) : OperationHistoryStore {
                     put(COL_STATUS, status)
                     put(COL_MESSAGE, message)
                 }
-            helper.writableDatabase.insert(TABLE, null, values)
+            helper.writableDatabase.insertOrThrow(TABLE, null, values)
         }
 
     override suspend fun list(limit: Int): List<OperationRecord> =
@@ -79,12 +80,31 @@ class SqliteOperationHistoryStore(context: Context) : OperationHistoryStore {
 
     override suspend fun clear(): Unit =
         withContext(Dispatchers.IO) {
-            helper.writableDatabase.delete(TABLE, null, null)
-            Unit
+            // Do not erase the durable marker of an active or interrupted mutation.
+            helper.writableDatabase.delete(TABLE, "$COL_STATUS != ?", arrayOf("IN_PROGRESS"))
         }
 
-    private class HistoryDb(context: Context) :
-        SQLiteOpenHelper(context, DB_NAME, null, DB_VERSION) {
+    override suspend fun complete(id: Long, status: String, message: String): Unit =
+        withContext(Dispatchers.IO) {
+            val values =
+                ContentValues().apply {
+                    put(COL_STATUS, status)
+                    put(COL_MESSAGE, message)
+                }
+            check(
+                helper.writableDatabase.update(
+                    TABLE,
+                    values,
+                    "$COL_ID = ?",
+                    arrayOf(id.toString()),
+                ) == 1,
+            ) {
+                "Operation history row is missing"
+            }
+        }
+
+    private class HistoryDb(context: Context, databaseName: String) :
+        SQLiteOpenHelper(context, databaseName, null, DB_VERSION) {
         override fun onCreate(db: SQLiteDatabase) {
             db.execSQL(
                 "CREATE TABLE $TABLE (" +

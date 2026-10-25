@@ -10,6 +10,7 @@ import id.mybase.aether.domain.PlannedOperation
 import id.mybase.aether.packages.PackageOperationExecutor
 import id.mybase.aether.packages.PackageRepository
 import id.mybase.aether.persistence.OperationHistoryStore
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -37,35 +38,63 @@ class RecoveryViewModel(
 
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing = _isRefreshing.asStateFlow()
+    private val _warnings = MutableStateFlow<List<String>>(emptyList())
+    val warnings = _warnings.asStateFlow()
 
     fun refresh() {
+        if (_isRefreshing.value) return
+        _isRefreshing.value = true
+        _error.value = null
         viewModelScope.launch {
-            _disabledByAether.value =
-                history.list().filter {
-                    it.operation == OperationType.DISABLE.name &&
-                        it.status == OperationStatus.SUCCESS.name
-                }
+            try {
+                val inventory = repo.getInventory()
+                _warnings.value = inventory.warnings
+                val disabled =
+                    inventory.apps.filter { !it.isEnabled }.map { it.packageName }.toSet()
+                _disabledByAether.value =
+                    history
+                        .list()
+                        .distinctBy { it.packageName }
+                        .filter {
+                            it.operation == OperationType.DISABLE.name &&
+                                it.status == OperationStatus.SUCCESS.name &&
+                                it.packageName in disabled
+                        }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _disabledByAether.value = emptyList()
+                _error.value = e.message ?: "Recovery inventory unavailable."
+            } finally {
+                _isRefreshing.value = false
+            }
         }
     }
 
     fun reenableAll(
         onProgress: (done: Int, total: Int, current: String) -> Unit = { _, _, _ -> },
     ) {
-        if (_isWorking.value) return
+        if (_isWorking.value || _isRefreshing.value) return
+        _isWorking.value = true
         viewModelScope.launch {
-            _isWorking.value = true
             _error.value = null
             _result.value = null
             try {
                 val apps = repo.getInstalledPackages().associateBy { it.packageName }
                 val plan =
                     _disabledByAether.value.mapNotNull { record ->
-                        apps[record.packageName]?.let { PlannedOperation(it, OperationType.ENABLE) }
+                        apps[record.packageName]
+                            ?.takeIf { !it.isEnabled }
+                            ?.let { PlannedOperation(it, OperationType.ENABLE) }
                     }
                 _result.value =
                     executor.execute(plan) { done, total, current ->
                         onProgress(done, total, current.app.label)
                     }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _error.value = e.message ?: "Re-enable failed."
             } finally {

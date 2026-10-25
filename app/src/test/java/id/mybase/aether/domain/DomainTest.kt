@@ -94,12 +94,9 @@ class DomainTest {
     }
 
     @Test
-    fun `uninstalling an updated system app is MEDIUM not HIGH`() {
-        // UPDATED_SYSTEM is a distinct kind from SYSTEM: uninstall --user 0 only
-        // reverts to the factory version, so it falls through to the plain
-        // UNINSTALL_FOR_USER -> MEDIUM rule.
+    fun `uninstalling an updated system app preserves HIGH origin risk`() {
         assertEquals(
-            RiskLevel.MEDIUM,
+            RiskLevel.HIGH,
             riskOf(OperationType.UNINSTALL_FOR_USER, SafetyRating.UNKNOWN, AppKind.UPDATED_SYSTEM),
         )
     }
@@ -143,10 +140,13 @@ class DomainTest {
             RiskLevel.LOW,
             riskOf(OperationType.DISABLE, SafetyRating.SAFE, AppKind.SYSTEM),
         )
-        assertEquals(
-            RiskLevel.LOW,
-            riskOf(OperationType.ENABLE, SafetyRating.UNKNOWN, AppKind.USER),
-        )
+    }
+
+    @Test
+    fun `unverified user app is never classified as low risk`() {
+        for (type in OperationType.entries) {
+            assertEquals(RiskLevel.MEDIUM, riskOf(type, SafetyRating.UNKNOWN, AppKind.USER))
+        }
     }
 
     // -- OperationRecord ------------------------------------------------------------

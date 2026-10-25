@@ -30,6 +30,7 @@ import org.junit.runner.Description
  * JUnit rule that installs an [UnconfinedTestDispatcher] as the Main dispatcher, so
  * `viewModelScope` (Main.immediate) executes eagerly and deterministically in unit tests.
  */
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class MainDispatcherRule(
     val dispatcher: TestDispatcher = UnconfinedTestDispatcher(),
 ) : TestWatcher() {
@@ -50,6 +51,7 @@ class FakeAdbShell : AdbShell {
     var lastConnectArgs: Pair<String, Int>? = null
     var connectResult: Result<Unit> = Result.success(Unit)
     var disconnectCalls = 0
+    var execResult: Result<String> = Result.success("2000")
 
     override suspend fun connect(host: String, port: Int, timeoutMs: Long): Result<Unit> {
         connectCalls++
@@ -63,8 +65,7 @@ class FakeAdbShell : AdbShell {
         _state.value = AdbConnectionState.Disconnected
     }
 
-    override suspend fun exec(vararg args: String, timeoutMs: Long): Result<String> =
-        Result.success("")
+    override suspend fun exec(vararg args: String, timeoutMs: Long): Result<String> = execResult
 
     fun emit(state: AdbConnectionState) {
         _state.value = state
@@ -111,6 +112,12 @@ class FakeCatalogue(
 class FakeHistoryStore : OperationHistoryStore {
     private val records = mutableListOf<OperationRecord>()
     private var nextId = 1L
+
+    override suspend fun complete(id: Long, status: String, message: String) {
+        val index = records.indexOfFirst { it.id == id }
+        check(index >= 0)
+        records[index] = records[index].copy(status = status, message = message)
+    }
 
     override suspend fun record(
         timestamp: Long,

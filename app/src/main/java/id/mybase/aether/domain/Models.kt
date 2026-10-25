@@ -90,17 +90,23 @@ enum class RiskLevel {
  * yields CRITICAL, then system-app uninstalls and RISKY ratings yield HIGH, then unknown system
  * packages and plain user uninstalls yield MEDIUM; everything else is LOW.
  */
-fun riskOf(type: OperationType, rating: SafetyRating, kind: AppKind): RiskLevel =
+fun riskOf(
+    type: OperationType,
+    rating: SafetyRating,
+    kind: AppKind,
+    isSystem: Boolean = kind == AppKind.SYSTEM || kind == AppKind.UPDATED_SYSTEM,
+): RiskLevel =
     when {
         rating == SafetyRating.ESSENTIAL -> RiskLevel.CRITICAL
-        kind == AppKind.SYSTEM && type == OperationType.UNINSTALL_FOR_USER -> RiskLevel.HIGH
+        isSystem && type == OperationType.UNINSTALL_FOR_USER -> RiskLevel.HIGH
         rating == SafetyRating.RISKY -> RiskLevel.HIGH
-        rating == SafetyRating.UNKNOWN && kind == AppKind.SYSTEM -> RiskLevel.MEDIUM
+        rating == SafetyRating.UNKNOWN -> RiskLevel.MEDIUM
         type == OperationType.UNINSTALL_FOR_USER -> RiskLevel.MEDIUM
         else -> RiskLevel.LOW
     }
 
 enum class OperationStatus {
+    IN_PROGRESS,
     SUCCESS,
     FAILED,
     SKIPPED,

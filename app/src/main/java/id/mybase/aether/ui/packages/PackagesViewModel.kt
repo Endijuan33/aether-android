@@ -18,10 +18,15 @@ import id.mybase.aether.packages.PackageOperationExecutor
 import id.mybase.aether.packages.PackageRepository
 import id.mybase.aether.packages.SafetyCatalogue
 import id.mybase.aether.persistence.OperationHistoryStore
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -36,6 +41,7 @@ enum class AppSort {
 /** Editable list state for the package browser. */
 data class PackagesUiState(
     val apps: List<AppPackage> = emptyList(),
+    val warnings: List<String> = emptyList(),
     val isLoading: Boolean = false,
     val error: String? = null,
     val query: String = "",
@@ -65,6 +71,7 @@ class PackagesViewModel(
     private val executor: PackageOperationExecutor,
     private val shell: AdbShell,
     private val history: OperationHistoryStore,
+    private val filterDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(PackagesUiState())
@@ -72,7 +79,10 @@ class PackagesViewModel(
 
     /** Apps after search / kind filter / sort are applied. */
     val visibleApps: StateFlow<List<AppPackage>> =
-        uiState.map { applyView(it) }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+        uiState
+            .map { applyView(it) }
+            .flowOn(filterDispatcher)
+            .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     val isConnected: StateFlow<Boolean> =
         shell.state
@@ -104,13 +114,27 @@ class PackagesViewModel(
 
     private val _previewType = MutableStateFlow<OperationType?>(null)
     val previewType: StateFlow<OperationType?> = _previewType.asStateFlow()
+    private var executionJob: Job? = null
 
     fun loadApps() {
+        if (_uiState.value.isLoading) return
         _uiState.update { it.copy(isLoading = true, error = null) }
         viewModelScope.launch {
             try {
-                val apps = repo.getInstalledPackages()
-                _uiState.update { it.copy(apps = apps, isLoading = false, error = null) }
+                val inventory = repo.getInventory()
+                val apps = inventory.apps
+                _uiState.update {
+                    it.copy(
+                        apps = apps,
+                        warnings = inventory.warnings,
+                        isLoading = false,
+                        error = null,
+                        selection =
+                            it.selection.intersect(apps.map { app -> app.packageName }.toSet()),
+                    )
+                }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _uiState.update {
                     it.copy(isLoading = false, error = e.message ?: "Failed to load apps.")
@@ -172,6 +196,7 @@ class PackagesViewModel(
     }
 
     fun clearExecution() {
+        if (_isExecuting.value) return
         _execution.value = null
         _completedLabels.value = emptyList()
         _lastResults.value = null
@@ -183,7 +208,7 @@ class PackagesViewModel(
         return PreviewItem(
             app = app,
             rating = rating,
-            risk = riskOf(type, rating, app.kind()),
+            risk = riskOf(type, rating, app.kind(), app.isSystem || app.isUpdatedSystemApp),
             reversible = type.isReversible(),
         )
     }
@@ -199,7 +224,7 @@ class PackagesViewModel(
         _lastResults.value = null
         _completedLabels.value = emptyList()
         _execution.value = ExecutionProgress(0, items.size, "")
-        viewModelScope.launch {
+        executionJob = viewModelScope.launch {
             try {
                 val plan = items.map { PlannedOperation(it.app, type) }
                 val results =
@@ -210,6 +235,11 @@ class PackagesViewModel(
                         onProgress(done, total, label)
                     }
                 _lastResults.value = results
+                loadApps()
+            } catch (e: CancellationException) {
+                _executionError.value =
+                    "Cancelled. Completed operations remain applied; refresh inventory and review history."
+                throw e
             } catch (e: Exception) {
                 _executionError.value = e.message ?: "Execution failed."
             } finally {
@@ -218,6 +248,10 @@ class PackagesViewModel(
                 clearSelection()
             }
         }
+    }
+
+    fun cancelExecution() {
+        executionJob?.cancel()
     }
 
     private fun applyView(s: PackagesUiState): List<AppPackage> {

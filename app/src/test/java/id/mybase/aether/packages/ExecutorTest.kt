@@ -4,20 +4,26 @@ import app.cash.turbine.test
 import id.mybase.aether.adb.AdbConnectionState
 import id.mybase.aether.adb.AdbShell
 import id.mybase.aether.domain.AppPackage
+import id.mybase.aether.domain.CatalogueEntry
 import id.mybase.aether.domain.OperationResult
 import id.mybase.aether.domain.OperationStatus
 import id.mybase.aether.domain.OperationType
 import id.mybase.aether.domain.PlannedOperation
+import id.mybase.aether.domain.SafetyRating
 import id.mybase.aether.persistence.OperationHistoryStore
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class ExecutorTest {
 
     private class FakeAdbShell : AdbShell {
@@ -25,7 +31,18 @@ class ExecutorTest {
             MutableStateFlow<AdbConnectionState>(AdbConnectionState.Connected("192.168.1.5", 5555))
         override val state: StateFlow<AdbConnectionState> = _state
         val calls = mutableListOf<List<String>>()
-        var handler: (List<String>) -> Result<String> = { Result.success("Success") }
+        val removed = mutableSetOf<String>()
+        val disabled = mutableSetOf<String>()
+        var applyMutation = true
+        var handler: suspend (List<String>) -> Result<String> = { args ->
+            Result.success(
+                when (args[1]) {
+                    "uninstall" -> "Success"
+                    "disable-user" -> "Package ${args.last()} new state: disabled-user"
+                    else -> "Package ${args.last()} new state: enabled"
+                },
+            )
+        }
 
         override suspend fun connect(host: String, port: Int, timeoutMs: Long): Result<Unit> =
             Result.success(Unit)
@@ -34,8 +51,25 @@ class ExecutorTest {
 
         override suspend fun exec(vararg args: String, timeoutMs: Long): Result<String> {
             val a = args.toList()
+            if (a == listOf("id", "-u")) return Result.success("2000\n")
+            if (a.take(3) == listOf("pm", "list", "packages")) {
+                val pkg = a.last()
+                val matches =
+                    pkg !in removed &&
+                        ("-d" !in a || pkg in disabled) &&
+                        ("-e" !in a || pkg !in disabled)
+                return Result.success(if (matches) "package:$pkg\n" else "")
+            }
             calls.add(a)
-            return handler(a)
+            return handler(a).also { result ->
+                if (result.isSuccess && applyMutation) {
+                    when (a[1]) {
+                        "uninstall" -> if (result.getOrNull() == "Success") removed.add(a.last())
+                        "disable-user" -> disabled.add(a.last())
+                        "enable" -> disabled.remove(a.last())
+                    }
+                }
+            }
         }
     }
 
@@ -68,6 +102,12 @@ class ExecutorTest {
 
         override suspend fun list(limit: Int) = emptyList<id.mybase.aether.domain.OperationRecord>()
 
+        override suspend fun complete(id: Long, status: String, message: String) {
+            if (failOnRecord) throw RuntimeException("history down")
+            val index = id.toInt() - 1
+            rows[index] = rows[index].copy(status = status, message = message)
+        }
+
         override suspend fun clear() {
             rows.clear()
         }
@@ -90,6 +130,81 @@ class ExecutorTest {
         )
 
     // -- success path --------------------------------------------------------------
+
+    @Test
+    fun `essential and own packages never reach destructive shell command`() = runTest {
+        val shell = FakeAdbShell()
+        val catalogue =
+            MapSafetyCatalogue(
+                "test",
+                mapOf(
+                    "com.example.core" to
+                        CatalogueEntry(
+                            "com.example.core",
+                            SafetyRating.ESSENTIAL,
+                            "Critical component",
+                            "test fixture",
+                            "test",
+                            "2026-10-25",
+                        ),
+                ),
+            )
+        val executor = PackageOperationExecutor(shell, FakeHistoryStore(), catalogue = catalogue)
+        for (pkg in listOf("com.example.core", "id.mybase.aether")) {
+            for (type in listOf(OperationType.DISABLE, OperationType.UNINSTALL_FOR_USER)) {
+                assertEquals(
+                    OperationStatus.SKIPPED,
+                    executor.execute(listOf(PlannedOperation(app(pkg), type))).single().status,
+                )
+            }
+        }
+        assertTrue(shell.calls.isEmpty())
+        assertEquals(
+            OperationStatus.SUCCESS,
+            executor
+                .execute(listOf(PlannedOperation(app("com.example.core"), OperationType.ENABLE)))
+                .single()
+                .status,
+        )
+    }
+
+    @Test
+    fun `concurrent plans serialize complete plans and create history before mutation`() = runTest {
+        val shell = FakeAdbShell()
+        val history = FakeHistoryStore()
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        shell.handler = { args ->
+            assertEquals(OperationStatus.IN_PROGRESS.name, history.rows.last().status)
+            if (args.last() == "com.example.first") {
+                entered.complete(Unit)
+                release.await()
+            }
+            Result.success("Package ${args.last()} new state: disabled-user")
+        }
+        val executor = PackageOperationExecutor(shell, history)
+        val first = async {
+            executor.execute(
+                listOf("com.example.first", "com.example.second").map {
+                    PlannedOperation(app(it), OperationType.DISABLE)
+                },
+            )
+        }
+        entered.await()
+        val other = async {
+            executor.execute(
+                listOf(PlannedOperation(app("com.example.third"), OperationType.DISABLE)),
+            )
+        }
+        runCurrent()
+        assertEquals(1, shell.calls.size)
+        release.complete(Unit)
+        assertTrue((first.await() + other.await()).all { it.status == OperationStatus.SUCCESS })
+        assertEquals(
+            listOf("com.example.first", "com.example.second", "com.example.third"),
+            shell.calls.map { it.last() },
+        )
+    }
 
     @Test
     fun `success path sends structured args and reports progress`() = runTest {
@@ -128,7 +243,7 @@ class ExecutorTest {
     }
 
     @Test
-    fun `enable maps to pm enable without user flag`() = runTest {
+    fun `enable explicitly targets user zero`() = runTest {
         val shell = FakeAdbShell()
         val executor = PackageOperationExecutor(shell, FakeHistoryStore())
         val results =
@@ -136,7 +251,7 @@ class ExecutorTest {
                 listOf(PlannedOperation(app("com.a.one"), OperationType.ENABLE)),
             )
         assertEquals(OperationStatus.SUCCESS, results.single().status)
-        assertEquals(listOf(listOf("pm", "enable", "com.a.one")), shell.calls)
+        assertEquals(listOf(listOf("pm", "enable", "--user", "0", "com.a.one")), shell.calls)
     }
 
     // -- failures --------------------------------------------------------------------
@@ -147,7 +262,7 @@ class ExecutorTest {
         shell.handler = { args ->
             if (args.last() == "com.bad.one")
                 Result.failure(RuntimeException("Failure [DELETE_FAILED_INTERNAL]"))
-            else Result.success("Success")
+            else Result.success("Package ${args.last()} new state: disabled-user")
         }
         val history = FakeHistoryStore()
         val executor = PackageOperationExecutor(shell, history)
@@ -188,6 +303,67 @@ class ExecutorTest {
     // -- validation --------------------------------------------------------------------
 
     @Test
+    fun `failure stdout is never reported as success`() = runTest {
+        val shell =
+            FakeAdbShell().apply {
+                handler = { Result.success("Failure [DELETE_FAILED_INTERNAL]") }
+            }
+        val results =
+            PackageOperationExecutor(shell, FakeHistoryStore())
+                .execute(
+                    listOf(PlannedOperation(app("com.a.one"), OperationType.UNINSTALL_FOR_USER)),
+                )
+        assertEquals(OperationStatus.FAILED, results.single().status)
+    }
+
+    @Test
+    fun `successful command without changed package state fails verification`() = runTest {
+        val shell = FakeAdbShell().apply { applyMutation = false }
+        val results =
+            PackageOperationExecutor(shell, FakeHistoryStore())
+                .execute(
+                    listOf(PlannedOperation(app("com.a.one"), OperationType.DISABLE)),
+                )
+        assertEquals(OperationStatus.FAILED, results.single().status)
+        assertTrue(results.single().message.contains("not verified"))
+    }
+
+    @Test
+    fun `secondary user inventory never reaches shell`() = runTest {
+        val shell = FakeAdbShell()
+        val results =
+            PackageOperationExecutor(shell, FakeHistoryStore()) { 10 }
+                .execute(
+                    listOf(PlannedOperation(app("com.a.one"), OperationType.DISABLE)),
+                )
+        assertEquals(OperationStatus.SKIPPED, results.single().status)
+        assertTrue(shell.calls.isEmpty())
+    }
+
+    @Test
+    fun `cancellation stops the plan and records uncertain outcome`() = runTest {
+        val shell =
+            FakeAdbShell().apply {
+                handler = { throw kotlinx.coroutines.CancellationException("cancelled") }
+            }
+        val history = FakeHistoryStore()
+        try {
+            PackageOperationExecutor(shell, history)
+                .execute(
+                    listOf(
+                        PlannedOperation(app("com.a.one"), OperationType.DISABLE),
+                        PlannedOperation(app("com.a.two"), OperationType.DISABLE),
+                    ),
+                )
+            throw AssertionError("Cancellation must propagate")
+        } catch (expected: kotlinx.coroutines.CancellationException) {
+            assertEquals(1, shell.calls.size)
+            assertEquals(OperationStatus.IN_PROGRESS.name, history.rows.single().status)
+            assertTrue(history.rows.single().message.contains("may have changed"))
+        }
+    }
+
+    @Test
     fun `invalid package id is SKIPPED without touching the shell`() = runTest {
         val shell = FakeAdbShell()
         val history = FakeHistoryStore()
@@ -221,8 +397,8 @@ class ExecutorTest {
                 ),
             )
         assertEquals(2, results.size)
-        assertTrue(results.all { it.status == OperationStatus.SUCCESS })
-        assertEquals(2, shell.calls.size)
+        assertTrue(results.all { it.status == OperationStatus.FAILED })
+        assertTrue(shell.calls.isEmpty())
     }
 
     @Test

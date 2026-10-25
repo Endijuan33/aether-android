@@ -16,6 +16,18 @@ object PackagesModule {
     fun createHistoryStore(context: Context): OperationHistoryStore =
         SqliteOperationHistoryStore(context.applicationContext)
 
-    fun createExecutor(shell: AdbShell, history: OperationHistoryStore): PackageOperationExecutor =
-        PackageOperationExecutor(shell, history)
+    fun createExecutor(
+        shell: AdbShell,
+        history: OperationHistoryStore,
+        context: Context,
+        catalogue: SafetyCatalogue,
+    ): PackageOperationExecutor =
+        PackageOperationExecutor(shell, history, catalogue, context.packageName) {
+            if (
+                android.os.UserHandle.getUserHandleForUid(android.os.Process.myUid()) ==
+                    android.os.UserHandle.getUserHandleForUid(0)
+            )
+                0
+            else -1
+        }
 }

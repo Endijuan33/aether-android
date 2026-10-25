@@ -50,7 +50,14 @@ class InMemoryOperationHistoryStore : OperationHistoryStore {
         }
     }
 
+    override suspend fun complete(id: Long, status: String, message: String): Unit =
+        mutex.withLock {
+            val index = rows.indexOfFirst { it.id == id }
+            check(index >= 0) { "Operation history row is missing" }
+            rows[index] = rows[index].copy(status = status, message = message)
+        }
+
     override suspend fun clear(): Unit = mutex.withLock {
-        rows.clear()
+        rows.removeAll { it.status != "IN_PROGRESS" }
     }
 }

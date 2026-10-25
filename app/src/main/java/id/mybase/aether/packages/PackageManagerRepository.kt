@@ -4,37 +4,41 @@ import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
-import android.os.Build
 import id.mybase.aether.domain.AppPackage
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 
 /**
  * Real [PackageRepository] backed by Android's [PackageManager]. No demo data: every field comes
- * from the device. Packages that fail to resolve are skipped individually; a [SecurityException] on
- * the bulk query yields an empty list instead of crashing the caller.
+ * from the device. Individual resolution failures are retained as partial-inventory warnings;
+ * bulk-query failures propagate to the caller's error state.
  */
 class PackageManagerRepository(private val context: Context) : PackageRepository {
 
-    override suspend fun getInstalledPackages(): List<AppPackage> =
+    override suspend fun getInstalledPackages(): List<AppPackage> = getInventory().apps
+
+    override suspend fun getInventory(): PackageInventory =
         withContext(Dispatchers.IO) {
             val pm = context.packageManager
-            val installed: List<PackageInfo> =
-                try {
-                    @Suppress("DEPRECATION") pm.getInstalledPackages(PackageManager.GET_PERMISSIONS)
-                } catch (e: SecurityException) {
-                    return@withContext emptyList()
-                } catch (e: RuntimeException) {
-                    return@withContext emptyList()
-                }
-            installed.mapNotNull { info ->
+            @Suppress("DEPRECATION")
+            val installed = pm.getInstalledPackages(PackageManager.GET_PERMISSIONS)
+            val warnings = mutableListOf<String>()
+            val apps = installed.mapNotNull { info ->
+                currentCoroutineContext().ensureActive()
                 try {
                     info.toAppPackage(pm)
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     // One unreadable package must not poison the whole inventory.
+                    warnings.add(info.packageName)
                     null
                 }
             }
+            PackageInventory(apps, warnings)
         }
 
     private fun PackageInfo.toAppPackage(pm: PackageManager): AppPackage {
@@ -43,9 +47,9 @@ class PackageManagerRepository(private val context: Context) : PackageRepository
         val flags = ai.flags
         return AppPackage(
             packageName = packageName,
-            label = pm.getApplicationLabel(ai)?.toString()?.ifBlank { packageName } ?: packageName,
+            label = pm.getApplicationLabel(ai).toString().ifBlank { packageName },
             versionName = versionName,
-            versionCode = longVersionCodeCompat(),
+            versionCode = longVersionCode,
             isSystem = (flags and ApplicationInfo.FLAG_SYSTEM) != 0,
             isEnabled = ai.enabled,
             isUpdatedSystemApp = (flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0,
@@ -57,20 +61,9 @@ class PackageManagerRepository(private val context: Context) : PackageRepository
         )
     }
 
-    private fun PackageInfo.longVersionCodeCompat(): Long =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            longVersionCode
-        } else {
-            @Suppress("DEPRECATION") versionCode.toLong()
-        }
-
     private fun installerOf(pm: PackageManager, packageName: String): String? {
         return try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                pm.getInstallSourceInfo(packageName).installingPackageName
-            } else {
-                @Suppress("DEPRECATION") pm.getInstallerPackageName(packageName)
-            }
+            pm.getInstallSourceInfo(packageName).installingPackageName
         } catch (e: PackageManager.NameNotFoundException) {
             null
         } catch (e: SecurityException) {

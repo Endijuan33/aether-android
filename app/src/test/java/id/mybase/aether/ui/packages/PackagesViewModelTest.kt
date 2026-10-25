@@ -6,7 +6,9 @@ import id.mybase.aether.domain.OperationType
 import id.mybase.aether.domain.SafetyRating
 import id.mybase.aether.domain.isReversible
 import id.mybase.aether.domain.riskOf
+import id.mybase.aether.packages.PackageInventory
 import id.mybase.aether.packages.PackageOperationExecutor
+import id.mybase.aether.packages.PackageRepository
 import id.mybase.aether.ui.fakes.FakeAdbShell
 import id.mybase.aether.ui.fakes.FakeCatalogue
 import id.mybase.aether.ui.fakes.FakeHistoryStore
@@ -59,7 +61,15 @@ class PackagesViewModelTest {
         shell = FakeAdbShell()
         history = FakeHistoryStore()
         executor = PackageOperationExecutor(shell, history)
-        vm = PackagesViewModel(repo, catalogue, executor, shell, history)
+        vm =
+            PackagesViewModel(
+                repo,
+                catalogue,
+                executor,
+                shell,
+                history,
+                mainDispatcherRule.dispatcher,
+            )
     }
 
     @Test
@@ -103,6 +113,30 @@ class PackagesViewModelTest {
         val state = vm.uiState.value
         assertFalse(state.isLoading)
         assertEquals("boom", state.error)
+    }
+
+    @Test
+    fun `partial inventory keeps readable packages and exposes warnings`() {
+        val partial =
+            object : PackageRepository {
+                override suspend fun getInstalledPackages() = apps
+
+                override suspend fun getInventory() =
+                    PackageInventory(apps, listOf("com.unreadable.app"))
+            }
+        val vm =
+            PackagesViewModel(
+                partial,
+                catalogue,
+                executor,
+                shell,
+                history,
+                mainDispatcherRule.dispatcher,
+            )
+        vm.loadApps()
+        assertEquals(apps, vm.uiState.value.apps)
+        assertEquals(listOf("com.unreadable.app"), vm.uiState.value.warnings)
+        assertFalse(vm.uiState.value.isLoading)
     }
 
     @Test
