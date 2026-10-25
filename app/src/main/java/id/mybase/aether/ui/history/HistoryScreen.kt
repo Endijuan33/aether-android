@@ -21,7 +21,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -29,12 +28,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import id.mybase.aether.domain.OperationType
 import id.mybase.aether.domain.label
 import id.mybase.aether.ui.components.AetherTopBar
 import id.mybase.aether.ui.components.ConfirmDialog
 import id.mybase.aether.ui.components.EmptyState
+import id.mybase.aether.ui.components.LoadingRow
 import id.mybase.aether.ui.components.StatusBadge
 import id.mybase.aether.ui.components.formatEpochMillis
 
@@ -47,7 +48,9 @@ fun HistoryScreen(
     historyVm: HistoryViewModel,
     navController: NavController,
 ) {
-    val records by historyVm.records.collectAsState()
+    val records by historyVm.records.collectAsStateWithLifecycle()
+    val loading by historyVm.isLoading.collectAsStateWithLifecycle()
+    val error by historyVm.error.collectAsStateWithLifecycle()
     var showClearConfirm by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(Unit) { historyVm.refresh() }
@@ -56,7 +59,7 @@ fun HistoryScreen(
         ConfirmDialog(
             title = "Clear history?",
             message =
-                "This permanently deletes all recorded operations. It does not undo the operations themselves.",
+                "This deletes completed history without undoing operations. Unverified interrupted records are retained for safety.",
             confirmLabel = "Clear",
             onConfirm = {
                 historyVm.clear()
@@ -75,7 +78,7 @@ fun HistoryScreen(
                 actions = {
                     IconButton(
                         onClick = { showClearConfirm = true },
-                        enabled = records.isNotEmpty(),
+                        enabled = records.isNotEmpty() && !loading,
                     ) {
                         Icon(Icons.Filled.Delete, contentDescription = "Clear history")
                     }
@@ -83,7 +86,16 @@ fun HistoryScreen(
             )
         },
     ) { padding ->
-        if (records.isEmpty()) {
+        if (loading) {
+            LoadingRow("Loading history…", modifier = Modifier.padding(padding))
+        } else if (error != null) {
+            EmptyState(
+                message = error!!,
+                actionLabel = "Retry",
+                onAction = historyVm::refresh,
+                modifier = Modifier.padding(padding),
+            )
+        } else if (records.isEmpty()) {
             EmptyState(
                 message = "No operations recorded yet.",
                 modifier = Modifier.padding(padding),

@@ -1,7 +1,9 @@
 package id.mybase.aether.ui.onboarding
 
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.provider.Settings
+import android.widget.Toast
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -19,11 +21,14 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import id.mybase.aether.ui.components.SectionTitle
 import id.mybase.aether.ui.navigation.Routes
@@ -34,7 +39,7 @@ private val STEPS =
         "Open Settings on this Android device.",
         "Go to System, then Developer options. If Developer options is hidden, enable it first: Settings > About phone > tap Build number 7 times.",
         "Turn on Wireless debugging.",
-        "Tap \"Pair device with pairing code\" and keep the code on screen — AETHER will ask for it next.",
+        "In AETHER, tap Pair & Connect. Open \"Pair device with pairing code\" in Android and enter its six-digit code in AETHER’s notification.",
     )
 
 /**
@@ -48,6 +53,16 @@ fun OnboardingScreen(
     navController: NavController,
 ) {
     val context = LocalContext.current
+    val completed by
+        settingsVm.onboardingCompleted.collectAsStateWithLifecycle(initialValue = false)
+    val saving by settingsVm.isSaving.collectAsStateWithLifecycle()
+    val error by settingsVm.error.collectAsStateWithLifecycle()
+    LaunchedEffect(completed) {
+        if (completed)
+            navController.navigate(Routes.DASHBOARD) {
+                popUpTo(Routes.ONBOARDING) { inclusive = true }
+            }
+    }
 
     Scaffold(
         topBar = { TopAppBar(title = { Text("Welcome to AETHER") }) },
@@ -64,7 +79,7 @@ fun OnboardingScreen(
             Text(
                 text =
                     "AETHER manages apps on this device over ADB. " +
-                        "Follow these steps once — afterwards pairing takes seconds.",
+                        "AETHER discovers the pairing and connection ports automatically. Follow the system setup steps, then use notification pairing.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -76,7 +91,22 @@ fun OnboardingScreen(
             Spacer(Modifier.height(16.dp))
             OutlinedButton(
                 onClick = {
-                    context.startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))
+                    try {
+                        context.startActivity(
+                            Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS),
+                        )
+                    } catch (e: ActivityNotFoundException) {
+                        try {
+                            context.startActivity(Intent(Settings.ACTION_SETTINGS))
+                        } catch (e: ActivityNotFoundException) {
+                            Toast.makeText(
+                                    context,
+                                    "Open Settings manually to continue.",
+                                    Toast.LENGTH_LONG,
+                                )
+                                .show()
+                        }
+                    }
                 },
             ) {
                 Text("Open Developer Settings")
@@ -85,13 +115,12 @@ fun OnboardingScreen(
             Button(
                 onClick = {
                     settingsVm.completeOnboarding()
-                    navController.navigate(Routes.DASHBOARD) {
-                        popUpTo(Routes.ONBOARDING) { inclusive = true }
-                    }
                 },
+                enabled = !saving,
             ) {
                 Text("Continue")
             }
+            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             Spacer(Modifier.height(8.dp))
             Text(
                 text = "You can revisit this guide any time from the setup screen.",

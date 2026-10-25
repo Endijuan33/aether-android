@@ -4,11 +4,15 @@ import app.cash.turbine.test
 import id.mybase.aether.domain.OperationRecord
 import id.mybase.aether.domain.OperationStatus
 import id.mybase.aether.domain.OperationType
+import id.mybase.aether.persistence.OperationHistoryStore
 import id.mybase.aether.ui.fakes.FakeHistoryStore
 import id.mybase.aether.ui.fakes.MainDispatcherRule
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -88,5 +92,18 @@ class HistoryViewModelTest {
             cancelAndIgnoreRemainingEvents()
         }
         assertTrue(store.list().isEmpty())
+    }
+
+    @Test
+    fun `history read error is observable and does not crash`() = runTest {
+        val broken =
+            object : OperationHistoryStore by store {
+                override suspend fun list(limit: Int): List<OperationRecord> =
+                    throw java.io.IOException("Disk unavailable")
+            }
+        val vm = HistoryViewModel(broken)
+        vm.refresh()
+        assertNotNull(vm.error.value)
+        assertFalse(vm.isLoading.value)
     }
 }

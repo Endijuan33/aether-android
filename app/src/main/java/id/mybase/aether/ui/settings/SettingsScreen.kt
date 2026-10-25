@@ -16,14 +16,17 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import id.mybase.aether.persistence.AetherPreferences
 import id.mybase.aether.ui.components.AetherTopBar
@@ -46,16 +49,30 @@ fun SettingsScreen(
     navController: NavController,
     prefs: AetherPreferences,
 ) {
-    val darkTheme by settingsVm.darkTheme.collectAsState(initial = true)
-    val lastPairingPort by prefs.lastPairingPort.collectAsState(initial = null)
-    val lastConnectionPort by prefs.lastConnectionPort.collectAsState(initial = null)
+    val darkTheme by settingsVm.darkTheme.collectAsStateWithLifecycle(initialValue = true)
+    val saving by settingsVm.isSaving.collectAsStateWithLifecycle()
+    val error by settingsVm.error.collectAsStateWithLifecycle()
+    val historyError by historyVm.error.collectAsStateWithLifecycle()
+    val onboardingCompleted by
+        settingsVm.onboardingCompleted.collectAsStateWithLifecycle(initialValue = null)
+    var resetRequested by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(resetRequested, onboardingCompleted) {
+        if (resetRequested && onboardingCompleted == false) {
+            navController.navigate(Routes.ONBOARDING) {
+                popUpTo(Routes.DASHBOARD) { inclusive = true }
+            }
+        }
+    }
+    val lastPairingPort by prefs.lastPairingPort.collectAsStateWithLifecycle(initialValue = null)
+    val lastConnectionPort by
+        prefs.lastConnectionPort.collectAsStateWithLifecycle(initialValue = null)
     var showClearConfirm by rememberSaveable { mutableStateOf(false) }
 
     if (showClearConfirm) {
         ConfirmDialog(
             title = "Clear history?",
             message =
-                "This permanently deletes all recorded operations. It does not undo the operations themselves.",
+                "This deletes completed history without undoing operations. Unverified interrupted records are retained for safety.",
             confirmLabel = "Clear",
             onConfirm = {
                 historyVm.clear()
@@ -77,6 +94,8 @@ fun SettingsScreen(
                     .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
+            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            historyError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             Section(title = "Appearance") {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -92,8 +111,10 @@ fun SettingsScreen(
                         )
                     }
                     Switch(
+                        modifier = Modifier.semantics { contentDescription = "Dark theme" },
                         checked = darkTheme,
                         onCheckedChange = settingsVm::setDarkTheme,
+                        enabled = !saving,
                     )
                 }
             }
@@ -103,10 +124,17 @@ fun SettingsScreen(
                 MetaRow("Last connection port", lastConnectionPort?.toString() ?: "not set")
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "Ports are remembered from your last successful pairing / connection and prefill the setup guide.",
+                    "Normal pairing discovers fresh endpoints. Remembered ports are for advanced troubleshooting only.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+
+            OutlinedButton(
+                onClick = { navController.navigate(Routes.ADVANCED_PAIRING) },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Advanced manual pairing & connection")
             }
 
             Section(title = "Data") {
@@ -120,10 +148,9 @@ fun SettingsScreen(
                 OutlinedButton(
                     onClick = {
                         settingsVm.resetOnboarding()
-                        navController.navigate(Routes.ONBOARDING) {
-                            popUpTo(Routes.DASHBOARD) { inclusive = true }
-                        }
+                        resetRequested = true
                     },
+                    enabled = !saving,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text("Reset onboarding")
