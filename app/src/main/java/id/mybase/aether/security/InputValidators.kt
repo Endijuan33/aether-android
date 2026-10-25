@@ -13,12 +13,22 @@ object InputValidators {
             "^(?=.{1,253}\$)(?!-)[A-Za-z0-9-]{1,63}(?<!-)(\\.(?!-)[A-Za-z0-9-]{1,63}(?<!-))*$",
         )
 
-    fun filterPairingDigits(input: String): String = input.filter { it.isDigit() }.take(6)
+    fun filterPairingDigits(input: String): String = input.filter { it in '0'..'9' }.take(6)
 
-    fun isValidPairingCode(code: String): Boolean = code.length == 6 && code.all { it.isDigit() }
+    fun isValidPairingCode(code: String): Boolean = code.length == 6 && code.all { it in '0'..'9' }
 
     fun isValidHost(host: String): Boolean {
         val h = host.trim()
+        if (':' in h) {
+            // Numeric IPv6 only: no DNS lookup. NSD can return scoped link-local addresses.
+            if (!h.matches(Regex("[0-9A-Fa-f:.]+(%[A-Za-z0-9_.-]{1,32})?"))) return false
+            return try {
+                java.net.InetAddress.getByName(h) is java.net.Inet6Address
+            } catch (_: java.net.UnknownHostException) {
+                false
+            }
+        }
+        if (h.all { it in '0'..'9' || it == '.' }) return IPV4.matcher(h).matches()
         return h.isNotEmpty() && (IPV4.matcher(h).matches() || HOSTNAME.matcher(h).matches())
     }
 

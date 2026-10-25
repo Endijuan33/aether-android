@@ -6,6 +6,7 @@ import id.mybase.aether.adb.fakes.FakeAdbServer
 import id.mybase.aether.adb.fakes.FakePairingServer
 import java.net.ServerSocket
 import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -185,10 +186,12 @@ class AdbConnectionManagerTest {
         // Only the first OPEN hangs (never closed); subsequent OPENs complete
         // normally so we can verify the session survived.
         val openCount = java.util.concurrent.atomic.AtomicInteger(0)
+        val firstOpened = kotlinx.coroutines.CompletableDeferred<Unit>()
         val server =
             FakeAdbServer(
                 openHandler = { _ ->
                     if (openCount.getAndIncrement() == 0) {
+                        firstOpened.complete(Unit)
                         FakeAdbServer.OpenResponse(emptyList(), sendClose = false)
                     } else {
                         FakeAdbServer.OpenResponse(listOf("v1\n".toByteArray()))
@@ -199,8 +202,8 @@ class AdbConnectionManagerTest {
         try {
             assertTrue(m.connect("127.0.0.1", server.port, 10_000).isSuccess)
             val hung = async { m.exec("pm", "list", "packages", timeoutMs = 30_000) }
-            // Let the OPEN reach the fake, then cancel the exec only.
-            kotlinx.coroutines.delay(500)
+            // Wait for the actual OPEN; virtual-time delay does not synchronize socket I/O.
+            firstOpened.await()
             hung.cancel()
             try {
                 hung.await()
@@ -209,10 +212,81 @@ class AdbConnectionManagerTest {
                 // expected
             }
             // The session survived: a fresh exec still works.
-            val again = m.exec("pm", "version", timeoutMs = 10_000)
-            assertTrue(again.isSuccess)
+            val again = m.exec("pm", "list", "packages", timeoutMs = 10_000)
+            assertTrue(again.exceptionOrNull()?.toString(), again.isSuccess)
             assertEquals(AdbConnectionState.Connected("127.0.0.1", server.port), m.state.value)
         } finally {
+            server.close()
+        }
+    }
+
+    @Test
+    fun `large streamed inventory is buffered without losing output`() = runTest {
+        val chunks = List(512) { "package:com.example.app$it\n".toByteArray() }
+        val server = FakeAdbServer(openHandler = { FakeAdbServer.OpenResponse(chunks) })
+        val m = manager()
+        try {
+            assertTrue(m.connect("127.0.0.1", server.port, 10_000).isSuccess)
+            val result = m.exec("pm", "list", "packages", timeoutMs = 10_000)
+            assertTrue(result.isSuccess)
+            assertEquals(
+                chunks.joinToString("") { it.toString(Charsets.UTF_8) },
+                result.getOrThrow(),
+            )
+        } finally {
+            m.disconnect()
+            server.close()
+        }
+    }
+
+    @Test
+    fun `cancelled OPEN is closed when its delayed acknowledgement arrives`() = runTest {
+        val opened = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val release = java.util.concurrent.CountDownLatch(1)
+        val count = java.util.concurrent.atomic.AtomicInteger()
+        val server = FakeAdbServer()
+        server.beforeOpenAcknowledgement = {
+            if (count.getAndIncrement() == 0) {
+                opened.complete(Unit)
+                check(release.await(5, java.util.concurrent.TimeUnit.SECONDS))
+            }
+        }
+        val m = manager()
+        try {
+            assertTrue(m.connect("127.0.0.1", server.port, 10_000).isSuccess)
+            val request = async { m.exec("pm", "list", "packages", timeoutMs = 30_000) }
+            opened.await()
+            request.cancel()
+            request.join()
+            release.countDown()
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                kotlinx.coroutines.withTimeout(5_000) {
+                    while (server.closedStreamIds.isEmpty()) kotlinx.coroutines.delay(10)
+                }
+            }
+            assertTrue(m.exec("pm", "list", "packages", timeoutMs = 10_000).isSuccess)
+        } finally {
+            release.countDown()
+            m.disconnect()
+            server.close()
+        }
+    }
+
+    @Test
+    fun `transport loss leaves Connected state`() = runTest {
+        val server = FakeAdbServer()
+        val m = manager()
+        try {
+            assertTrue(m.connect("127.0.0.1", server.port, 10_000).isSuccess)
+            server.close()
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                kotlinx.coroutines.withTimeout(5_000) {
+                    m.state.first { it is AdbConnectionState.Failed }
+                }
+            }
+            assertTrue(m.exec("pm", "list", "packages").isFailure)
+        } finally {
+            m.disconnect()
             server.close()
         }
     }

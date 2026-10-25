@@ -1,8 +1,8 @@
 package id.mybase.aether.adb
 
+import id.mybase.aether.adb.pairing.*
 import java.io.InputStream
 import java.io.OutputStream
-import java.net.InetSocketAddress
 import java.net.Socket
 import java.security.SecureRandom
 import java.security.cert.X509Certificate
@@ -19,14 +19,14 @@ import org.conscrypt.Conscrypt
  *
  * Why Conscrypt and not the platform SSLSocket or BouncyCastle?
  * - The platform's Conscrypt (`com.android.org.conscrypt`) exposes RFC 5705 keying-material export
- *   only via a hidden API, which is blocked for apps targeting recent SDKs (verified on-device:
- *   "TLS keying material export failed").
- * - BouncyCastle's TLS 1.3 stack has an interop bug with adbd's BoringSSL: the handshake completes,
- *   but the server resets the connection on the first application-data write (verified on-device:
- *   "ConnectionResetException" at [write SPAKE2]).
- * - The standalone Conscrypt library (`org.conscrypt:conscrypt-android`) is BoringSSL-based, so it
- *   interops perfectly with adbd, AND it exposes `Conscrypt.exportKeyingMaterial` as a PUBLIC API
- *   (see javadoc for conscrypt-openjdk).
+ *   via a hidden framework API; production avoids hidden-API access. The standalone provider
+ *   exposes that API publicly.
+ * - BouncyCastle is confined to JVM fixtures. Those tests substitute exporter bytes and cannot
+ *   prove Android/adbd interoperability. No universal compatibility is asserted here. See
+ *   docs/limitations.md for actual device validation.
+ * - Standalone Conscrypt delegates non-exportable RSA signing to AndroidKeyStore; the V3 identity
+ *   authorizes DIGEST_NONE/raw padding for that operation while retaining SIGN/VERIFY purposes.
+ *   Authentication still requires the real TLS/exporter/SPAKE2/peer-info exchange.
  *
  * The pairing password is the 6-digit code concatenated with 64 bytes of TLS exporter (RFC 5705,
  * label "adb-label" + NUL, matching AOSP's pairing_connection).
@@ -51,11 +51,20 @@ object ConscryptPairingTransport {
      * exporter. Uses Conscrypt's SSLContext (BoringSSL) with a trust-all manager and a self-signed
      * RSA client certificate (like Shizuku) — adbd expects a client cert in the pairing handshake.
      */
-    fun openPairingChannel(
+    suspend fun openPairingChannel(
         host: String,
         port: Int,
         timeoutMs: Int,
+        keys: AdbKeyMaterial,
     ): PairingTlsChannel {
+        var stage = PairingProtocolStage.TLS_IDENTITY
+        fun mark(next: PairingProtocolStage) {
+            stage = next
+            AndroidPairingDiagnostics.record(
+                PairingDiagnostic(PairingDiagnosticEvent.PROTOCOL_STAGE, protocolStage = stage),
+            )
+        }
+        mark(PairingProtocolStage.TLS_IDENTITY)
         // Use Conscrypt's provider directly (no need to install globally).
         // Note: do NOT call SSLContext.getInstance("TLS").socketFactory here —
         // that throws "SSLContext is not initialized" on an uninitialized context.
@@ -75,8 +84,7 @@ object ConscryptPairingTransport {
                 override fun getAcceptedIssuers(): Array<X509Certificate> = emptyArray()
             }
         // Present a self-signed RSA client certificate (Shizuku does this; adbd expects it).
-        val keyStore = PairingClientCert.generateKeyStore()
-        val keyManager = PairingClientCert.createKeyManager(keyStore)
+        val keyManager = AdbTlsTransport.SingleKeyManager(keys)
         sslContext.init(
             arrayOf<KeyManager>(keyManager),
             arrayOf<TrustManager>(trustAll),
@@ -84,35 +92,46 @@ object ConscryptPairingTransport {
         )
 
         val tcp = Socket()
-        tcp.connect(InetSocketAddress(host, port), timeoutMs)
-        tcp.soTimeout = timeoutMs
-
-        val sslSocket = sslContext.socketFactory.createSocket(tcp, host, port, true) as SSLSocket
+        var sslSocket: SSLSocket? = null
         try {
-            sslSocket.soTimeout = timeoutMs
-            sslSocket.startHandshake()
+            return withSocketGuard(tcp) {
+                mark(PairingProtocolStage.TCP_CONNECT)
+                tcp.connect(localAdbEndpoint(host, port), timeoutMs)
+                tcp.soTimeout = timeoutMs
+                val tls = sslContext.socketFactory.createSocket(tcp, host, port, true) as SSLSocket
+                sslSocket = tls
+                tls.enabledProtocols =
+                    tls.supportedProtocols.filter { it == "TLSv1.3" }.toTypedArray()
+                tls.soTimeout = timeoutMs
+                mark(PairingProtocolStage.TLS_HANDSHAKE)
+                tls.startHandshake()
 
-            // Public API in standalone Conscrypt (not hidden like the platform's).
-            val label = String(PairingCrypto.TLS_EXPORTER_LABEL, Charsets.UTF_8)
-            val exporter =
-                Conscrypt.exportKeyingMaterial(
-                    sslSocket,
-                    label,
-                    null,
-                    PairingCrypto.TLS_EXPORTER_LENGTH,
-                ) ?: throw java.io.IOException("Conscrypt returned null exporter")
-            require(exporter.size == PairingCrypto.TLS_EXPORTER_LENGTH) {
-                "Conscrypt exported ${exporter.size} bytes, expected ${PairingCrypto.TLS_EXPORTER_LENGTH}"
+                // Public API in standalone Conscrypt (not hidden like the platform's).
+                val label = String(PairingCrypto.TLS_EXPORTER_LABEL, Charsets.UTF_8)
+                mark(PairingProtocolStage.TLS_EXPORTER)
+                val exporter =
+                    Conscrypt.exportKeyingMaterial(
+                        tls,
+                        label,
+                        null,
+                        PairingCrypto.TLS_EXPORTER_LENGTH,
+                    ) ?: throw java.io.IOException("Conscrypt returned null exporter")
+                require(exporter.size == PairingCrypto.TLS_EXPORTER_LENGTH) {
+                    "Conscrypt exported ${exporter.size} bytes, expected ${PairingCrypto.TLS_EXPORTER_LENGTH}"
+                }
+
+                mark(PairingProtocolStage.TLS_READY)
+                PairingTlsChannel(
+                    input = tls.inputStream,
+                    output = tls.outputStream,
+                    exporter = exporter,
+                    closeAction = { tls.close() },
+                )
             }
-
-            return PairingTlsChannel(
-                input = sslSocket.inputStream,
-                output = sslSocket.outputStream,
-                exporter = exporter,
-                closeAction = { runCatching { sslSocket.close() } },
-            )
-        } catch (e: Exception) {
-            runCatching { sslSocket.close() }
+        } catch (e: Throwable) {
+            AndroidPairingDiagnostics.protocolFailure(stage, e)
+            runCatching { sslSocket?.close() }
+            runCatching { tcp.close() }
             throw e
         }
     }

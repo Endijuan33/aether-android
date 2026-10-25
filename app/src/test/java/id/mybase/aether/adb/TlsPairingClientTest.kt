@@ -2,6 +2,7 @@ package id.mybase.aether.adb
 
 import id.mybase.aether.adb.fakes.FakeAdbKeyMaterial
 import id.mybase.aether.adb.fakes.FakePairingServer
+import id.mybase.aether.adb.pairing.*
 import java.net.ServerSocket
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -14,6 +15,34 @@ import org.junit.Test
  * fake server.
  */
 class TlsPairingClientTest {
+
+    @Test
+    fun tlsProviderFailureIsDistinguishedFromRejectedPairingCodeWithoutLoggingSecrets() = runTest {
+        val trace = PairingDiagnosticBuffer()
+        val client =
+            TlsPairingClient(
+                FakeAdbKeyMaterial(),
+                openChannel = { _, _, _ ->
+                    throw javax.net.ssl.SSLHandshakeException("123456 private fixture").apply {
+                        initCause(java.security.InvalidKeyException("private fixture"))
+                    }
+                },
+                diagnostics = trace,
+            )
+        val result = client.pair("127.0.0.1", 37001, "123456")
+        assertTrue(result is PairingResult.NetworkError)
+        val failure = trace.snapshot().single()
+        assertEquals(PairingProtocolStage.TLS_HANDSHAKE, failure.protocolStage)
+        assertEquals(
+            listOf("javax.net.ssl.SSLHandshakeException", "java.security.InvalidKeyException"),
+            failure.exceptionTypes,
+        )
+        assertTrue(
+            trace.snapshot().none {
+                it.toString().contains("123456") || it.toString().contains("private fixture")
+            },
+        )
+    }
 
     private val exporterBytes = ByteArray(64) { 0xA5.toByte() }
 
@@ -98,13 +127,18 @@ class TlsPairingClientTest {
             val peerInfo = server.peerInfo
             assertTrue(peerInfo != null && peerInfo.size == PairingCrypto.PEER_INFO_SIZE)
             assertEquals(PairingCrypto.PEER_INFO_RSA_PUB_KEY, peerInfo!![0])
-            // The embedded SPKI DER parses as an RSA public key
-            // (RSA-2048 SPKI is 294 bytes).
-            val spki = peerInfo.copyOfRange(1, 1 + 294)
-            val publicKey =
-                java.security.KeyFactory.getInstance("RSA")
-                    .generatePublic(java.security.spec.X509EncodedKeySpec(spki))
-            assertTrue(publicKey is java.security.interfaces.RSAPublicKey)
+            val keyText =
+                peerInfo
+                    .drop(1)
+                    .takeWhile { it != 0.toByte() }
+                    .toByteArray()
+                    .toString(Charsets.US_ASCII)
+            val encoded = java.util.Base64.getDecoder().decode(keyText.substringBefore(' '))
+            assertEquals(524, encoded.size)
+            val fields = java.nio.ByteBuffer.wrap(encoded).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+            assertEquals(64, fields.int)
+            fields.position(520)
+            assertEquals(65537, fields.int)
         } finally {
             server.close()
         }

@@ -1,5 +1,6 @@
 package id.mybase.aether.adb
 
+import id.mybase.aether.adb.pairing.*
 import id.mybase.aether.security.InputValidators
 import java.io.EOFException
 import java.net.ConnectException
@@ -11,6 +12,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 
@@ -19,10 +22,9 @@ import kotlinx.coroutines.withTimeout
  *
  * Handshake (see docs/adb-pairing-protocol.md for sources):
  * 1. TLS to host:pairingPort via [ConscryptPairingTransport] (standalone Conscrypt/BoringSSL — the
- *    platform Conscrypt's exporter is a hidden API, and BouncyCastle's TLS 1.3 has interop issues
- *    with adbd). keying-material export is a hidden API, blocked for apps targeting recent SDKs).
- *    The server certificate is self-signed and not pre-trusted; the 6-digit code is the
- *    authentication.
+ *    the public standalone exporter avoids hidden framework APIs. JVM fixtures cannot establish
+ *    Android/adbd interoperability; see docs/limitations.md for hardware validation). The server
+ *    certificate is self-signed and not pre-trusted; the 6-digit code is the authentication.
  * 2. SPAKE2 exchange, framed per [PairingProtocol] (client = Alice). The SPAKE2 password is the
  *    pairing-code bytes concatenated with 64 bytes of TLS keying material exported with label
  *    "adb-label\0" (channel binding; without it, a MITM on the TLS connection could forward the
@@ -48,12 +50,15 @@ class TlsPairingClient(
     private val keys: AdbKeyMaterial,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val openChannel:
-        (
+        suspend (
             host: String,
             port: Int,
             timeoutMs: Int,
         ) -> ConscryptPairingTransport.PairingTlsChannel =
-        ConscryptPairingTransport::openPairingChannel,
+        { host, port, timeout ->
+            ConscryptPairingTransport.openPairingChannel(host, port, timeout, keys)
+        },
+    private val diagnostics: PairingDiagnostics = PairingDiagnostics.NONE,
 ) : AdbPairingClient {
 
     override suspend fun pair(
@@ -81,6 +86,7 @@ class TlsPairingClient(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                diagnostics.protocolFailure(PairingProtocolStage.TLS_IDENTITY, e)
                 // doPair maps every expected failure to a PairingResult; this is
                 // a safety net for the unexpected.
                 PairingResult.NetworkError(
@@ -94,20 +100,24 @@ class TlsPairingClient(
             try {
                 openChannel(host, port, CONNECT_TIMEOUT_MS)
             } catch (e: ConnectException) {
+                diagnostics.protocolFailure(PairingProtocolStage.TCP_CONNECT, e)
                 return PairingResult.ConnectionRefused
             } catch (e: UnknownHostException) {
+                diagnostics.protocolFailure(PairingProtocolStage.TCP_CONNECT, e)
                 return PairingResult.NetworkError("Unknown host")
             } catch (e: SocketTimeoutException) {
+                diagnostics.protocolFailure(PairingProtocolStage.TLS_HANDSHAKE, e)
                 return PairingResult.Timeout
             } catch (e: SSLException) {
+                diagnostics.protocolFailure(PairingProtocolStage.TLS_HANDSHAKE, e)
                 return PairingResult.NetworkError("TLS handshake with pairing endpoint failed")
             } catch (e: java.io.IOException) {
-                if (currentJob()?.isCancelled == true)
-                    throw CancellationException("Pairing cancelled")
+                currentCoroutineContext().ensureActive()
+                diagnostics.protocolFailure(PairingProtocolStage.TLS_HANDSHAKE, e)
                 return PairingResult.NetworkError("Could not reach pairing endpoint")
             }
         try {
-            return handshake(channel, code)
+            return withCancellationClose({ channel.close() }) { handshake(channel, code) }
         } finally {
             runCatching { channel.close() }
         }
@@ -119,7 +129,15 @@ class TlsPairingClient(
     ): PairingResult {
         val out = channel.output
         val input = channel.input
+        var stage = PairingProtocolStage.SPAKE2_SEND
+        fun mark(next: PairingProtocolStage) {
+            stage = next
+            diagnostics.record(
+                PairingDiagnostic(PairingDiagnosticEvent.PROTOCOL_STAGE, protocolStage = stage),
+            )
+        }
         try {
+            mark(PairingProtocolStage.SPAKE2_SEND)
             // 1. SPAKE2 key exchange. Password = code || TLS exporter (channel binding).
             // The exporter was captured during the BC TLS handshake
             // (see ConscryptPairingTransport).
@@ -137,16 +155,21 @@ class TlsPairingClient(
                     spake.generateMessage(),
                 )
             } catch (e: java.io.IOException) {
+                currentCoroutineContext().ensureActive()
+                diagnostics.protocolFailure(stage, e)
                 return PairingResult.NetworkError(
                     "Pairing I/O error [write SPAKE2]: ${e.javaClass.simpleName}: ${e.message}",
                 )
             }
+            mark(PairingProtocolStage.SPAKE2_READ)
             val serverSpake =
                 try {
                     PairingProtocol.readFrame(input)
                 } catch (e: SocketTimeoutException) {
                     throw e // Let the outer handler map this to Timeout.
                 } catch (e: java.io.IOException) {
+                    currentCoroutineContext().ensureActive()
+                    diagnostics.protocolFailure(stage, e)
                     return PairingResult.NetworkError(
                         "Pairing I/O error [read SPAKE2]: ${e.javaClass.simpleName}: ${e.message}",
                     )
@@ -154,10 +177,12 @@ class TlsPairingClient(
             if (serverSpake.type != PairingProtocol.TYPE_SPAKE2) {
                 return PairingResult.NetworkError("Unexpected pairing message from server")
             }
+            mark(PairingProtocolStage.SPAKE2_DERIVE)
             val keyMaterial =
                 try {
                     spake.deriveKeyMaterial(serverSpake.payload)
                 } catch (e: Spake2Exception) {
+                    diagnostics.protocolFailure(stage, e)
                     return PairingResult.InvalidCode
                 }
             // 2. Peer-info key.
@@ -167,15 +192,18 @@ class TlsPairingClient(
             aesKey.fill(0)
             try {
                 // 3. Our peer info first (8192-byte struct), then the server's response.
+                mark(PairingProtocolStage.PEER_INFO_SEND)
                 PairingProtocol.writeFrame(
                     out,
                     PairingProtocol.TYPE_PEER_INFO,
                     cipher.encrypt(buildPeerInfo()),
                 )
+                mark(PairingProtocolStage.PEER_INFO_READ)
                 val serverInfo =
                     try {
                         PairingProtocol.readFrame(input)
                     } catch (e: EOFException) {
+                        diagnostics.protocolFailure(stage, e)
                         // The server derived a different key, could not
                         // decrypt our peer info, and dropped the connection:
                         // the code was wrong.
@@ -184,55 +212,69 @@ class TlsPairingClient(
                 if (serverInfo.type != PairingProtocol.TYPE_PEER_INFO) {
                     return PairingResult.NetworkError("Unexpected pairing message from server")
                 }
+                mark(PairingProtocolStage.PEER_INFO_DECRYPT)
                 val serverPeerInfo =
                     try {
                         cipher.decrypt(serverInfo.payload)
                     } catch (e: AEADBadTagException) {
+                        diagnostics.protocolFailure(stage, e)
                         return PairingResult.InvalidCode
                     }
                 if (!isPlausiblePeerInfo(serverPeerInfo)) {
                     return PairingResult.NetworkError("Server peer info malformed")
                 }
+                mark(PairingProtocolStage.COMPLETE)
                 return PairingResult.Success
             } finally {
                 cipher.destroy()
             }
         } catch (e: SocketTimeoutException) {
+            diagnostics.protocolFailure(stage, e)
             return PairingResult.Timeout
         } catch (e: EOFException) {
+            diagnostics.protocolFailure(stage, e)
             return PairingResult.NetworkError("Pairing connection closed unexpectedly")
         } catch (e: PairingProtocolException) {
+            diagnostics.protocolFailure(stage, e)
             return PairingResult.NetworkError("Pairing protocol error")
         } catch (e: SSLException) {
+            diagnostics.protocolFailure(stage, e)
             return PairingResult.NetworkError("TLS error during pairing")
         } catch (e: java.io.IOException) {
             // Cancellation closes the socket via withSocketGuard, which turns
             // into an IOException here: report cancellation, not a failure.
-            if (currentJob()?.isCancelled == true) throw CancellationException("Pairing cancelled")
+            currentCoroutineContext().ensureActive()
+            diagnostics.protocolFailure(stage, e)
             // Include the concrete failure for on-device diagnostics (no secrets here:
             // just the exception class and message).
             return PairingResult.NetworkError(
                 "Pairing I/O error: ${e.javaClass.simpleName}: ${e.message}",
             )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            currentCoroutineContext().ensureActive()
+            diagnostics.protocolFailure(stage, e)
+            return PairingResult.NetworkError("Pairing provider failed during $stage")
         }
     }
 
     /**
      * Builds our 8192-byte peer-info struct: type ADB_RSA_PUB_KEY (0) followed by the RSA public
-     * key in X.509 SPKI DER, zero-padded.
-     *
-     * PENDING HARDWARE VALIDATION: AOSP's exact expected public-key encoding inside the peer-info
-     * data field is unverified from public sources; SPKI DER is the standard encoding and the most
-     * likely accepted form.
+     * key in AOSP's base64 Android RSA encoding, followed by a comment and NUL, zero-padded.
+     * Encoding is checked against AOSP android_pubkey_encode; hardware validation is pending.
      */
     private fun buildPeerInfo(): ByteArray {
         val struct = ByteArray(PairingCrypto.PEER_INFO_SIZE)
         struct[0] = PairingCrypto.PEER_INFO_RSA_PUB_KEY
-        val spki = keys.getOrCreateKeyPair().public.encoded
-        require(spki.size <= PairingCrypto.PEER_INFO_SIZE - 1) {
+        val publicKey =
+            AdbPublicKey.encode(
+                keys.getOrCreateKeyPair().public as java.security.interfaces.RSAPublicKey,
+            )
+        require(publicKey.size <= PairingCrypto.PEER_INFO_SIZE - 1) {
             "RSA public key too large for peer info"
         }
-        spki.copyInto(struct, 1)
+        publicKey.copyInto(struct, 1)
         return struct
     }
 

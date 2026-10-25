@@ -12,6 +12,7 @@ import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -78,6 +79,19 @@ class AdbConnectionManager(
                         managerScope,
                         ioDispatcher,
                     )
+                val active = checkNotNull(session)
+                managerScope.launch {
+                    val failure = active.termination.await()
+                    sessionMutex.withLock {
+                        if (session === active) {
+                            closeSessionLocked()
+                            _state.value =
+                                AdbConnectionState.Failed(
+                                    "Connection lost: ${failure.message?.redactSecrets() ?: "transport closed"}",
+                                )
+                        }
+                    }
+                }
                 _state.value = AdbConnectionState.Connected(cleanHost, port)
                 return Result.success(Unit)
             } catch (e: SocketTimeoutException) {
@@ -206,26 +220,37 @@ class AdbConnectionManager(
     }
 
     companion object {
-        private val ALLOWED_COMMANDS = setOf("pm", "cmd")
-        private val FORBIDDEN_CHARS = charArrayOf(';', '|', '&', '$', '`', '\n', '\r', '\u0000')
 
         /**
          * Returns the validated argv. Throws [IllegalArgumentException] on any violation: empty
          * argv, non-allowlisted command, blank argument, or shell metacharacters.
          */
         fun validateArgs(args: Array<out String>): List<String> {
-            require(args.isNotEmpty()) { "No command provided" }
-            val command = args[0]
-            require(command in ALLOWED_COMMANDS) {
-                "Command '$command' is not allowlisted (0.1.0 allows: ${ALLOWED_COMMANDS.sorted().joinToString(", ")})"
+            val argv = args.toList()
+            val mutation =
+                argv.size == 5 &&
+                    argv[0] == "pm" &&
+                    argv[1] in setOf("uninstall", "disable-user", "enable") &&
+                    argv[2] == "--user" &&
+                    argv[3] == "0" &&
+                    InputValidators.isValidPackageName(argv[4])
+            val readPrefix = listOf("pm", "list", "packages")
+            val suffix = if (argv.take(3) == readPrefix) argv.drop(3) else null
+            val read =
+                suffix != null &&
+                    (suffix.isEmpty() ||
+                        suffix == listOf("--user", "0") ||
+                        (suffix.size == 3 &&
+                            suffix.take(2) == listOf("--user", "0") &&
+                            InputValidators.isValidPackageName(suffix[2])) ||
+                        (suffix.size == 4 &&
+                            suffix[0] in setOf("-d", "-e") &&
+                            suffix.subList(1, 3) == listOf("--user", "0") &&
+                            InputValidators.isValidPackageName(suffix[3])))
+            require(mutation || read || argv == listOf("id", "-u")) {
+                "Only validated user-0 package operations and shell identity checks are allowed"
             }
-            for (arg in args) {
-                require(arg.isNotBlank()) { "Blank argument is not allowed" }
-                require(arg.none { it in FORBIDDEN_CHARS }) {
-                    "Argument contains forbidden shell metacharacters"
-                }
-            }
-            return args.toList()
+            return argv
         }
     }
 }

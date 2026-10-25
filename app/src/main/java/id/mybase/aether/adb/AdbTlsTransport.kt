@@ -1,6 +1,5 @@
 package id.mybase.aether.adb
 
-import java.net.InetSocketAddress
 import java.net.Socket
 import java.security.Principal
 import java.security.PrivateKey
@@ -13,6 +12,7 @@ import javax.net.ssl.SSLSocket
 import javax.net.ssl.X509ExtendedKeyManager
 import javax.net.ssl.X509TrustManager
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.InternalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.suspendCancellableCoroutine
 
@@ -36,9 +36,8 @@ internal object AdbTlsTransport {
      * cancelled while the TCP connect or TLS handshake is blocked, the socket is closed to unblock
      * the I/O thread (no leaks).
      *
-     * Note: the pairing endpoint uses [BcTlsPairingTransport] (BouncyCastle), not this object,
-     * because pairing needs RFC 5705 keying-material export which the platform Conscrypt only
-     * exposes via a hidden API.
+     * Pairing uses [ConscryptPairingTransport] with standalone Conscrypt's public exporter; this
+     * connection transport uses the platform TLS provider.
      *
      * @param handshakeTimeoutMs OS-level read timeout (soTimeout) for the TLS handshake, in
      *   milliseconds. This is independent of the coroutine Delay, so it fires in real wall-clock
@@ -55,19 +54,48 @@ internal object AdbTlsTransport {
     ): SSLSocket {
         val sslContext = SSLContext.getInstance("TLS")
         sslContext.init(arrayOf(SingleKeyManager(keys)), arrayOf(trustAllManager()), SecureRandom())
-        val socket = sslContext.socketFactory.createSocket() as SSLSocket
-        if (handshakeTimeoutMs > 0) socket.soTimeout = handshakeTimeoutMs
+        val tcp = Socket()
+        var socket: SSLSocket? = null
         try {
-            withSocketGuard(socket) {
-                socket.connect(InetSocketAddress(host, port), connectTimeoutMs)
-                socket.startHandshake()
+            return withSocketGuard(tcp) {
+                tcp.connect(localAdbEndpoint(host, port), connectTimeoutMs)
+                tcp.soTimeout = handshakeTimeoutMs
+                AdbProtocol.writeMessage(
+                    tcp.outputStream,
+                    AdbProtocol.CMD_CNXN,
+                    AdbProtocol.ADB_VERSION,
+                    AdbProtocol.MAX_PAYLOAD,
+                    AdbProtocol.CNXN_PAYLOAD,
+                )
+                val request = AdbProtocol.readMessage(tcp.inputStream)
+                if (
+                    request.command != AdbProtocol.CMD_STLS ||
+                        request.arg0 != AdbProtocol.STLS_VERSION ||
+                        request.arg1 != 0 ||
+                        request.payload.isNotEmpty()
+                ) {
+                    throw AdbException(
+                        "Endpoint did not request supported ADB TLS; use the wireless connection port",
+                    )
+                }
+                AdbProtocol.writeMessage(
+                    tcp.outputStream,
+                    AdbProtocol.CMD_STLS,
+                    AdbProtocol.STLS_VERSION,
+                    0,
+                    AdbProtocol.EMPTY,
+                )
+                val tls = sslContext.socketFactory.createSocket(tcp, host, port, true) as SSLSocket
+                socket = tls
+                tls.soTimeout = handshakeTimeoutMs
+                tls.enabledProtocols =
+                    tls.supportedProtocols.filter { it == "TLSv1.3" }.toTypedArray()
+                tls.startHandshake()
+                tls
             }
-            // Handshake done: back to blocking mode. The caller (AdbSession.open)
-            // applies its own soTimeout for the CNXN exchange.
-            socket.soTimeout = 0
-            return socket
         } catch (e: Throwable) {
-            runCatching { socket.close() }
+            runCatching { socket?.close() }
+            runCatching { tcp.close() }
             throw e
         }
     }
@@ -85,7 +113,7 @@ internal object AdbTlsTransport {
      * Key manager serving the single ADB identity. The chain holds our self-signed certificate;
      * adbd matches its public key against the keys authorized during pairing.
      */
-    private class SingleKeyManager(private val keys: AdbKeyMaterial) : X509ExtendedKeyManager() {
+    internal class SingleKeyManager(private val keys: AdbKeyMaterial) : X509ExtendedKeyManager() {
         companion object {
             private const val ALIAS = "aether-adb"
         }
@@ -155,10 +183,11 @@ internal suspend fun currentJob(): Job? = suspendCancellableCoroutine { cont ->
  * is no longer active, an [java.io.IOException] from the block should be treated as cancellation,
  * not as a transport failure (see usages).
  */
-internal suspend fun <T> withSocketGuard(socket: Socket, block: suspend () -> T): T {
+@OptIn(InternalCoroutinesApi::class)
+internal suspend fun <T> withCancellationClose(close: () -> Unit, block: suspend () -> T): T {
     val hook =
-        currentJob()?.invokeOnCompletion { cause ->
-            if (cause is CancellationException) runCatching { socket.close() }
+        currentJob()?.invokeOnCompletion(onCancelling = true, invokeImmediately = true) { cause ->
+            if (cause is CancellationException) runCatching { close() }
         }
     try {
         return block()
@@ -166,3 +195,6 @@ internal suspend fun <T> withSocketGuard(socket: Socket, block: suspend () -> T)
         hook?.dispose()
     }
 }
+
+internal suspend fun <T> withSocketGuard(socket: Socket, block: suspend () -> T): T =
+    withCancellationClose({ socket.close() }, block)

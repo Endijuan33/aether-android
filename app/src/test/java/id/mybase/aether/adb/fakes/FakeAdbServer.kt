@@ -29,10 +29,13 @@ class FakeAdbServer(
     val keys = FakeAdbKeyMaterial()
     val port: Int
     val openedDestinations: MutableList<String> = Collections.synchronizedList(mutableListOf())
+    val closedStreamIds: MutableList<Int> = Collections.synchronizedList(mutableListOf())
+    @Volatile var beforeOpenAcknowledgement: (String) -> Unit = {}
 
     private val serverSocket = ServerSocket(0)
     private val thread: Thread
     private val nextServerId = AtomicInteger(1000)
+    private val activeSockets = java.util.concurrent.ConcurrentHashMap.newKeySet<Socket>()
 
     init {
         port = serverSocket.localPort
@@ -50,6 +53,7 @@ class FakeAdbServer(
             // a long-lived connection never blocks the next accept.
             while (true) {
                 val socket: Socket = serverSocket.accept()
+                activeSockets.add(socket)
                 Thread({ handle(socket) }, "fake-adb-conn").apply {
                     isDaemon = true
                     start()
@@ -66,11 +70,21 @@ class FakeAdbServer(
                 Thread.sleep(60_000)
                 return
             }
+            val cnxn = AdbProtocol.readMessage(socket.inputStream)
+            check(cnxn.command == AdbProtocol.CMD_CNXN) { "expected plaintext CNXN" }
+            check(cnxn.payload.last() == 0.toByte()) { "CNXN must be NUL-terminated" }
+            AdbProtocol.writeMessage(
+                socket.outputStream,
+                AdbProtocol.CMD_STLS,
+                AdbProtocol.STLS_VERSION,
+                0,
+                AdbProtocol.EMPTY,
+            )
+            val stls = AdbProtocol.readMessage(socket.inputStream)
+            check(stls.command == AdbProtocol.CMD_STLS) { "expected STLS acknowledgement" }
             tlsServerWrap(socket, keys, needClientAuth = true).use { ssl ->
                 val input = ssl.inputStream
                 val out = ssl.outputStream
-                val cnxn = AdbProtocol.readMessage(input)
-                check(cnxn.command == AdbProtocol.CMD_CNXN) { "expected CNXN" }
                 AdbProtocol.writeMessage(
                     out,
                     AdbProtocol.CMD_CNXN,
@@ -83,10 +97,15 @@ class FakeAdbServer(
                     val msg = AdbProtocol.readMessage(input)
                     when (msg.command) {
                         AdbProtocol.CMD_OPEN -> {
-                            val destination = msg.payload.toString(Charsets.UTF_8)
+                            check(msg.payload.last() == 0.toByte()) {
+                                "OPEN must be NUL-terminated"
+                            }
+                            val destination =
+                                msg.payload.dropLast(1).toByteArray().toString(Charsets.UTF_8)
                             openedDestinations.add(destination)
                             val serverId = nextServerId.getAndIncrement()
                             streams[msg.arg0] = serverId
+                            beforeOpenAcknowledgement(destination)
                             AdbProtocol.writeMessage(
                                 out,
                                 AdbProtocol.CMD_OKAY,
@@ -116,7 +135,8 @@ class FakeAdbServer(
                             }
                         }
                         AdbProtocol.CMD_CLSE -> {
-                            streams.remove(msg.arg1)
+                            closedStreamIds.add(msg.arg0)
+                            streams.remove(msg.arg0)
                         }
                         AdbProtocol.CMD_WRTE -> {
                             // Polite ack; the shell flow never sends these.
@@ -134,10 +154,14 @@ class FakeAdbServer(
             }
         } catch (e: Exception) {
             // Client went away; nothing to do.
+        } finally {
+            activeSockets.remove(socket)
+            runCatching { socket.close() }
         }
     }
 
     fun close() {
+        activeSockets.forEach { runCatching { it.close() } }
         runCatching { serverSocket.close() }
         thread.join(5_000)
     }

@@ -8,6 +8,16 @@ import org.junit.Test
 
 class InputValidatorsTest {
 
+    @org.junit.Test
+    fun `numeric IPv6 discovery addresses are accepted without allowing arbitrary host syntax`() {
+        org.junit.Assert.assertTrue(InputValidators.isValidHost("::1"))
+        org.junit.Assert.assertTrue(InputValidators.isValidHost("2001:db8::1234"))
+        for (host in
+            listOf("::1;id", "https://[::1]", "bad::host", "1::2::3", ":", "[::1]:5555")) org.junit
+            .Assert
+            .assertFalse(InputValidators.isValidHost(host))
+    }
+
     // -- pairing digits -------------------------------------------------------
 
     @Test
@@ -41,14 +51,11 @@ class InputValidatorsTest {
     }
 
     @Test
-    fun `dotted numerics that are not valid IPv4 still pass as hostnames`() {
-        // The validator is syntactic: a dot-separated numeric string is also a
-        // legal hostname (numeric labels are allowed by the hostname grammar),
-        // so these are accepted here and fail later at DNS/connect time.
-        assertTrue(InputValidators.isValidHost("256.1.1.1"))
-        assertTrue(InputValidators.isValidHost("1.2.3"))
-        assertTrue(InputValidators.isValidHost("999.999.999.999"))
-        assertTrue(InputValidators.isValidHost("1.2.3.4.5"))
+    fun `malformed IPv4 is rejected instead of interpreted as a hostname`() {
+        assertFalse(InputValidators.isValidHost("256.1.1.1"))
+        assertFalse(InputValidators.isValidHost("1.2.3"))
+        assertFalse(InputValidators.isValidHost("999.999.999.999"))
+        assertFalse(InputValidators.isValidHost("1.2.3.4.5"))
     }
 
     @Test

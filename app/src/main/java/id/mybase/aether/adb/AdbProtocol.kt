@@ -26,6 +26,8 @@ import java.nio.ByteOrder
 internal object AdbProtocol {
     const val CMD_CNXN = 0x4E584E43 // "CNXN"
     const val CMD_AUTH = 0x48545541 // "AUTH"
+    const val CMD_STLS = 0x534c5453 // "STLS"
+    const val STLS_VERSION = 0x01000000
     const val CMD_OPEN = 0x4E45504F // "OPEN"
     const val CMD_WRTE = 0x45545257 // "WRTE"
     const val CMD_OKAY = 0x59414B4F // "OKAY"
@@ -35,14 +37,14 @@ internal object AdbProtocol {
     const val AUTH_SIGNATURE = 2
     const val AUTH_RSAPUBLICKEY = 3
 
-    /** Protocol version announced in CNXN (matches platform-tools). */
+    /** Legacy checksum-bearing version announced in CNXN; AOSP negotiates the lower version. */
     const val ADB_VERSION = 0x01000000
 
     /** Maximum payload we advertise and accept. */
     const val MAX_PAYLOAD = 256 * 1024
 
     /** Identity string announced in the CNXN payload. */
-    val CNXN_PAYLOAD = "host::aether".toByteArray(Charsets.UTF_8)
+    val CNXN_PAYLOAD = "host::aether\u0000".toByteArray(Charsets.UTF_8)
 
     val EMPTY = ByteArray(0)
 
