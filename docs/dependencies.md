@@ -83,7 +83,8 @@ Notification pairing uses AndroidX NotificationCompat/RemoteInput already presen
 
 CI exposed missing verification entries for the Linux AAPT2 JAR/POM
 (`9.4.1-15978811`), Guava parent POM (`33.4.0-jre`), JUnit BOM module
-(`5.11.0-M2`) and Kotlin Gradle plugins BOM module/POM (`2.2.10`). These are
+(`5.11.0-M2`), Kotlin Gradle plugins BOM module/POM (`2.2.10`) and Groovy BOM
+POM (`4.0.29`, required by lint). These are
 artifacts of the existing build graph, not dependency upgrades. Their SHA-256
 entries were added without changing the locked versions or verification policy.
 
