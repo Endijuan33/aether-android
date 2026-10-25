@@ -1,15 +1,7 @@
 # Project AETHER — weekly dependency hygiene.
 #
-# Runs every Monday at 06:00 UTC (and on demand). Gates on dynamic dependency
-# versions, exports the full resolved dependency list for human review, and is
-# explicit about what it does NOT cover: there is no vulnerability scan,
-# because osv-scanner's Java support requires a Gradle lockfile
-# (gradle.lockfile), buildscript-gradle.lockfile, verification-metadata.xml,
-# or pom.xml — none of which this project has in 0.1.0. Adding lockfile
-# configuration is a project change, so this workflow deliberately does not
-# do it; see the follow-up note in the summary step. Every third-party action
-# is pinned to a full immutable commit SHA (release version as trailing
-# comment). Least privilege: contents: read only.
+# Weekly runtime advisory and reproducibility checks. Actions use immutable SHAs.
+# Public Maven coordinates are sent to OSV; no application/user data is uploaded.
 
 name: Dependency check
 
@@ -50,11 +42,8 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
         with:
-          # The action installs the platform + build-tools itself (and accepts
-          # licenses); a manual `sdkmanager "platforms;android-37"` install
-          # fails because that package is not in sdkmanager's public index.
-          api-level: 37
-          build-tools: 37.0.0
+          packages: 'platform-tools platforms;android-37.0 build-tools;36.0.0'
+          log-accepted-android-sdk-licenses: false
 
       - name: Set up Gradle (with cache)
         uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
@@ -94,11 +83,19 @@ jobs:
           ./gradlew :app:dependencies --configuration releaseRuntimeClasspath --console=plain > deps.txt
           wc -l deps.txt
 
+      - name: Scan resolved release dependencies
+        run: |
+          ./gradlew :app:exportRuntimeDependencies --console=plain
+          python3 scripts/check_dependency_advisories.py
+
       - name: Upload dependency list
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: dependency-list
-          path: deps.txt
+          path: |
+            deps.txt
+            app/build/reports/release-dependencies.txt
+            app/build/reports/dependency-advisories.json
           retention-days: 14
 
       - name: Write coverage summary
@@ -108,10 +105,6 @@ jobs:
             echo "## Dependency check — what this does and does not cover"
             echo "- Dynamic-version gate on gradle/libs.versions.toml: fails on \`+\`, \`latest\`, \`SNAPSHOT\`, and version ranges."
             echo "- Full dependency list (\`:app:dependencies\`, releaseRuntimeClasspath) uploaded as the \`dependency-list\` artifact for manual review."
-            echo "- OSV vulnerability scan: NOT RUN. osv-scanner's Java support requires a Gradle lockfile"
-            echo "  (gradle.lockfile), buildscript-gradle.lockfile, verification-metadata.xml, or pom.xml —"
-            echo "  none of which this project has in 0.1.0. No lockfile config was added by this workflow."
-            echo "- Recommended follow-up: enable Gradle dependency locking"
-            echo "  (\`./gradlew dependencies --write-locks\`) so a future OSV scan can resolve and match"
-            echo "  the exact dependency graph."
+            echo "- OSV checks the resolved release Maven coordinates; matching advisories or network failures fail the check."
+            echo "- No matching advisory is not proof that a dependency has no vulnerabilities."
           } >> "$GITHUB_STEP_SUMMARY"

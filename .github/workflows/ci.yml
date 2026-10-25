@@ -39,7 +39,6 @@ jobs:
 
       - name: Validate Gradle wrapper
         uses: gradle/wrapper-validation-action@f9c9c575b8b21b6485636a91ffecd10e558c62f6 # v3.5.0
-        continue-on-error: true # Runner network to services.gradle.org is flaky; do not block CI.
 
       - name: Set up JDK 17 (Temurin)
         uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
@@ -50,57 +49,60 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
         with:
-          # The action installs the platform + build-tools itself (and accepts
-          # licenses); a manual `sdkmanager "platforms;android-37"` install
-          # fails because that package is not in sdkmanager's public index.
-          api-level: 37
-          build-tools: 37.0.0
+          packages: 'platform-tools platforms;android-37.0 build-tools;36.0.0'
+          log-accepted-android-sdk-licenses: false
 
       - name: Set up Gradle (with cache)
         uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
-        # NOTE: with only `contents: read` permission the Gradle cache can be
-        # restored but not saved; the action logs a warning and the build still
-        # succeeds. Least privilege is kept deliberately.
 
-      - name: Download ktfmt (checksum-verified)
-        run: |
-          set -euo pipefail
-          # ktfmt v0.65 from the Kotlin/ktfmt GitHub release. The release
-          # publishes a .sha256 file only for the native archives (not for the
-          # plain jar), so the linux-x86_64 native archive is used and verified
-          # against the publisher's checksum before execution.
-          KTFMT_VERSION="0.65"
-          KTFMT_SHA256="3684327b092db9b76fffcb9525decf73f8331ed17e00ce3232769c11cd36d352"
-          curl -fsSL -o /tmp/ktfmt.tar.gz \
-            "https://github.com/Kotlin/ktfmt/releases/download/v${KTFMT_VERSION}/ktfmt-linux-x86_64-${KTFMT_VERSION}.tar.gz"
-          echo "${KTFMT_SHA256}  /tmp/ktfmt.tar.gz" | sha256sum -c -
-          mkdir -p /tmp/ktfmt && tar xzf /tmp/ktfmt.tar.gz -C /tmp/ktfmt
-          echo "KTFMT_BIN=/tmp/ktfmt/ktfmt-linux-x86_64-${KTFMT_VERSION}/ktfmt" >> "$GITHUB_ENV"
-
-      - name: Check Kotlin formatting (ktfmt --kotlinlang-style)
-        run: |
-          set -euo pipefail
-          # ktfmt 0.65 native has no `--check` flag; the equivalent check is
-          # `--dry-run --set-exit-if-changed` (exit 1 when any file would be
-          # reformatted, files left untouched). The style is explicit so the
-          # whole repo converges on one deterministic format: the Kotlin
-          # language guidelines style (4-space indent).
-          mapfile -t KT_FILES < <(find app/src -name '*.kt' -type f 2>/dev/null | sort || true)
-          if [ "${#KT_FILES[@]}" -eq 0 ]; then
-            echo "No Kotlin sources under app/src — nothing to format-check."
-            exit 0
-          fi
-          echo "Format-checking ${#KT_FILES[@]} Kotlin file(s) with ktfmt 0.65 (--kotlinlang-style)..."
-          "$KTFMT_BIN" --kotlinlang-style -n --set-exit-if-changed "${KT_FILES[@]}"
+      - name: Check Kotlin formatting
+        run: ./gradlew ktfmtCheck --console=plain
 
       - name: Run unit tests
         run: ./gradlew testDebugUnitTest --console=plain
 
+      - name: Test release-summary safety
+        run: python3 -m unittest discover -s scripts -p 'test_*.py'
+
       - name: Run Android lint
-        run: ./gradlew lintDebug --console=plain
+        run: ./gradlew lintDebug lintRelease --console=plain
+
+      - name: Check resolved runtime dependencies
+        run: |
+          ./gradlew :app:exportRuntimeDependencies --console=plain
+          python3 scripts/check_dependency_advisories.py
 
       - name: Assemble debug APK
         run: ./gradlew assembleDebug --console=plain
+
+      - name: Assemble unsigned release and compile device tests
+        run: ./gradlew assembleRelease assembleDebugAndroidTest --console=plain
+
+      - name: APK checksums and build summary
+        run: |
+          set -euo pipefail
+          python3 scripts/inspect_apks.py app/build/outputs/apk/debug/*.apk app/build/outputs/apk/release/*.apk > app/build/reports/apk-inspection.json
+          sha256sum app/build/outputs/apk/debug/*.apk app/build/outputs/apk/release/*.apk > checksums.txt
+          {
+            echo '## Validation'
+            echo 'Formatting, unit tests, both lint variants and APK assembly passed.'
+            echo 'Device tests were compiled. Hardware validation still pending.'
+            echo 'Release APK is unsigned and requires release signing.'
+            echo '```'
+            cat checksums.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload unsigned release and checksums
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: unsigned-release-apk
+          path: |
+            app/build/outputs/apk/release/*.apk
+            checksums.txt
+            app/build/reports/apk-inspection.json
+          retention-days: 14
+          if-no-files-found: error
 
       - name: Upload debug APK
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -118,5 +120,51 @@ jobs:
           path: |
             app/build/reports/tests
             app/build/test-results
+            app/build/reports/lint-results-*.html
+            app/build/reports/lint-results-*.xml
+          retention-days: 14
+          if-no-files-found: warn
+
+  instrumentation:
+    name: Android UI and platform regressions
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up JDK 17
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
+        with:
+          packages: 'platform-tools platforms;android-37.0 build-tools;36.0.0'
+          log-accepted-android-sdk-licenses: false
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+      - name: Enable runner KVM access
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Run real Android UI and platform tests
+        uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # immutable v2 revision
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          script: ./gradlew connectedDebugAndroidTest --console=plain
+      - name: Upload device test reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: instrumentation-reports
+          path: |
+            app/build/reports/androidTests
+            app/build/outputs/androidTest-results
           retention-days: 14
           if-no-files-found: warn
