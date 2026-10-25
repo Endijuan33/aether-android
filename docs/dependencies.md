@@ -66,7 +66,7 @@ version kept as a trailing comment in each workflow):
 
 - `actions/checkout` (v7.0.1), `actions/upload-artifact` (v7.0.2),
   `actions/download-artifact` (v8.0.2)
-- `gradle/wrapper-validation-action` (v3.5.0), `gradle/actions/setup-gradle` (v6.4.0)
+- `gradle/actions/wrapper-validation`, `gradle/actions/setup-gradle` (v6.4.0)
 - `actions/setup-java` (v6.1.0), `android-actions/setup-android` (v4.0.4)
 - `ReactiveCircus/android-emulator-runner` (immutable v2 commit a421e43855164a8197daf9d8d40fe71c6996bb0d)
 
@@ -95,3 +95,9 @@ were checked before calculating the recorded SHA-256 hashes. Repository sidecars
 establish consistency with the publisher's hosted files, not independent
 signature attestation. Local cache/build success alone does not establish that
 all metadata and platform tools needed by a GitHub runner have verification entries.
+
+The wrapper-validation steps use the same immutable Gradle Actions v6.4.0
+revision as setup-gradle. This replaces the deprecated Node 20 wrapper action
+whose checksum lookup timed out on GitHub. The maintained Node 24 action batches
+unknown-checksum downloads and retries network failures; wrapper verification
+remains required, with no custom checksum bypass or ignored failure.
