@@ -102,7 +102,9 @@ class NotificationPairingUiTest {
             .assertExists()
         compose.onNodeWithText("Start in-app discovery fallback").performScrollTo().performClick()
         assertEquals(listOf(true to false), requested)
-        compose.onNodeWithText("Searching for pairing service…").assertExists()
+        // The fallback accepts a code before discovery resolves an endpoint.
+        compose.onNodeWithText("Waiting for pairing code — discovery is running").assertExists()
+        compose.onNodeWithText("Six-digit pairing code").assertExists()
     }
 
     @Test
