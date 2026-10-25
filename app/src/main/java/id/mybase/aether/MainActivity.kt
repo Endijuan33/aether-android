@@ -3,11 +3,11 @@ package id.mybase.aether
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import id.mybase.aether.di.AppContainer
 import id.mybase.aether.ui.navigation.AetherNavHost
@@ -29,7 +29,7 @@ class MainActivity : ComponentActivity() {
         val splashScreen = installSplashScreen()
         super.onCreate(savedInstanceState)
 
-        val container = AppContainer(this)
+        val container = AppContainer.get(this)
 
         var startDestination by mutableStateOf<String?>(null)
         splashScreen.setKeepOnScreenCondition { startDestination == null }
@@ -39,7 +39,8 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            val darkTheme by container.prefs.darkTheme.collectAsState(initial = true)
+            val darkTheme by
+                container.prefs.darkTheme.collectAsStateWithLifecycle(initialValue = true)
             AetherTheme(darkTheme = darkTheme) {
                 val destination = startDestination
                 if (destination != null) {

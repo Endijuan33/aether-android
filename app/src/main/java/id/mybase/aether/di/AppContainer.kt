@@ -1,9 +1,11 @@
 package id.mybase.aether.di
 
 import android.content.Context
-import id.mybase.aether.adb.AdbModule
+import id.mybase.aether.adb.AdbConnectionManager
 import id.mybase.aether.adb.AdbPairingClient
 import id.mybase.aether.adb.AdbShell
+import id.mybase.aether.adb.AndroidAdbKeyStore
+import id.mybase.aether.adb.TlsPairingClient
 import id.mybase.aether.packages.PackageOperationExecutor
 import id.mybase.aether.packages.PackageRepository
 import id.mybase.aether.packages.PackagesModule
@@ -20,18 +22,48 @@ import id.mybase.aether.persistence.PersistenceModule
  */
 class AppContainer(context: Context) {
 
+    val applicationScope =
+        kotlinx.coroutines.CoroutineScope(
+            kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main.immediate,
+        )
+
+    val wirelessPairing by lazy {
+        id.mybase.aether.adb.pairing.WirelessPairingController(
+            pairingClient,
+            shell,
+            id.mybase.aether.adb.pairing.NsdAdbServiceDiscovery(appContext),
+            applicationScope,
+            rememberConnection = { host, port ->
+                prefs.setLastHost(host)
+                prefs.setLastConnectionPort(port)
+            },
+            diagnostics = id.mybase.aether.adb.pairing.AndroidPairingDiagnostics,
+        )
+    }
+
+    companion object {
+        @Volatile private var instance: AppContainer? = null
+
+        fun get(context: Context): AppContainer =
+            instance
+                ?: synchronized(this) {
+                    instance ?: AppContainer(context.applicationContext).also { instance = it }
+                }
+    }
+
     private val appContext: Context = context.applicationContext
+    private val keys by lazy { AndroidAdbKeyStore(appContext) }
 
     val prefs: AetherPreferences by lazy {
         PersistenceModule.createPreferences(appContext)
     }
 
     val pairingClient: AdbPairingClient by lazy {
-        AdbModule.createPairingClient(appContext)
+        TlsPairingClient(keys, diagnostics = id.mybase.aether.adb.pairing.AndroidPairingDiagnostics)
     }
 
     val shell: AdbShell by lazy {
-        AdbModule.createShell(appContext)
+        AdbConnectionManager(keys, pairingClient)
     }
 
     val packageRepository: PackageRepository by lazy {
@@ -47,6 +79,6 @@ class AppContainer(context: Context) {
     }
 
     val executor: PackageOperationExecutor by lazy {
-        PackagesModule.createExecutor(shell, history)
+        PackagesModule.createExecutor(shell, history, appContext, catalogue)
     }
 }

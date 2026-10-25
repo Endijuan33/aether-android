@@ -1,5 +1,6 @@
 package id.mybase.aether.ui.diagnostics
 
+import android.content.ClipData
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -15,13 +16,14 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import id.mybase.aether.adb.AdbConnectionState
 import id.mybase.aether.persistence.AetherPreferences
@@ -31,6 +33,7 @@ import id.mybase.aether.ui.components.InfoCard
 import id.mybase.aether.ui.components.Section
 import id.mybase.aether.ui.components.SectionTitle
 import id.mybase.aether.ui.connection.ConnectionViewModel
+import kotlinx.coroutines.launch
 
 /**
  * Connection troubleshooting: current state, last known endpoint, a redacted diagnostics dump (safe
@@ -42,18 +45,22 @@ fun DiagnosticsScreen(
     navController: NavController,
     prefs: AetherPreferences,
 ) {
-    val state by connectionVm.state.collectAsState()
-    val connectError by connectionVm.connectError.collectAsState()
-    val lastHost by prefs.lastHost.collectAsState(initial = null)
-    val lastConnectionPort by prefs.lastConnectionPort.collectAsState(initial = null)
-    val clipboard = LocalClipboardManager.current
+    val state by connectionVm.state.collectAsStateWithLifecycle()
+    val wireless = connectionVm.wirelessState?.collectAsStateWithLifecycle()?.value
+    val connectError by connectionVm.connectError.collectAsStateWithLifecycle()
+    val lastHost by prefs.lastHost.collectAsStateWithLifecycle(initialValue = null)
+    val lastConnectionPort by
+        prefs.lastConnectionPort.collectAsStateWithLifecycle(initialValue = null)
+    val clipboard = LocalClipboard.current
+    val scope = rememberCoroutineScope()
 
     val canReconnect =
-        lastHost != null &&
+        wireless?.active != true &&
+            lastHost != null &&
             lastConnectionPort != null &&
             state !is AdbConnectionState.Connected &&
             state !is AdbConnectionState.Connecting
-    val canDisconnect = state !is AdbConnectionState.Disconnected
+    val canDisconnect = state !is AdbConnectionState.Disconnected || wireless?.active == true
 
     Scaffold(
         topBar = { AetherTopBar(title = "Diagnostics", navController = navController) },
@@ -74,6 +81,12 @@ fun DiagnosticsScreen(
                         text = state.describe(),
                         style = MaterialTheme.typography.bodyLarge,
                     )
+                    wireless?.let {
+                        Text(
+                            "Wireless pairing phase: ${it.phase}",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
                     connectError?.let {
                         Spacer(Modifier.height(4.dp))
                         Text(
@@ -108,7 +121,16 @@ fun DiagnosticsScreen(
                 Spacer(Modifier.height(8.dp))
                 OutlinedButton(
                     onClick = {
-                        clipboard.setText(AnnotatedString(connectionVm.redactedDiagnostics()))
+                        scope.launch {
+                            clipboard.setClipEntry(
+                                ClipEntry(
+                                    ClipData.newPlainText(
+                                        "ADB diagnostics",
+                                        connectionVm.redactedDiagnostics(),
+                                    ),
+                                ),
+                            )
+                        }
                     },
                 ) {
                     Text("Copy diagnostics")
@@ -135,7 +157,7 @@ fun DiagnosticsScreen(
             InfoCard(
                 title = "Troubleshooting tips",
                 body =
-                    "• The device and this phone must be on the same Wi-Fi network.\n" +
+                    "• AETHER manages this device only. Use its local address or 127.0.0.1.\n" +
                         "• Wireless debugging turns itself off when the device restarts — re-enable it and pair again.\n" +
                         "• If pairing times out, tap \"Pair device with pairing code\" again to get a fresh code.\n" +
                         "• \"Connection refused\" usually means the IP or port changed; check the Wireless debugging screen.",

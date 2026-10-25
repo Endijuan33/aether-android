@@ -11,9 +11,14 @@ import id.mybase.aether.security.InputValidators
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 /**
@@ -27,16 +32,31 @@ class ConnectionViewModel(
     private val shell: AdbShell,
     private val pairingClient: AdbPairingClient,
     private val prefs: AetherPreferences,
+    private val wirelessPairing: id.mybase.aether.adb.pairing.WirelessPairingController? = null,
 ) : ViewModel() {
 
     /** Live ADB connection state, sourced directly from [AdbShell]. */
-    val state: StateFlow<AdbConnectionState> = shell.state
+    val state: StateFlow<AdbConnectionState> =
+        if (wirelessPairing == null) shell.state
+        else
+            combine(shell.state, wirelessPairing.state) { transport, workflow ->
+                    if (transport is AdbConnectionState.Connected && !workflow.ready)
+                        AdbConnectionState.Connecting(transport.host, transport.port)
+                    else transport
+                }
+                .stateIn(viewModelScope, SharingStarted.Eagerly, AdbConnectionState.Disconnected)
+
+    val wirelessState = wirelessPairing?.state
 
     private val _pairingError = MutableStateFlow<String?>(null)
     val pairingError: StateFlow<String?> = _pairingError.asStateFlow()
 
     private val _isPairing = MutableStateFlow(false)
     val isPairing: StateFlow<Boolean> = _isPairing.asStateFlow()
+    private val _pairingSucceeded = MutableStateFlow(false)
+    val pairingSucceeded: StateFlow<Boolean> = _pairingSucceeded.asStateFlow()
+    private var pairingJob: Job? = null
+    private var connectionJob: Job? = null
 
     private val _connectError = MutableStateFlow<String?>(null)
     val connectError: StateFlow<String?> = _connectError.asStateFlow()
@@ -68,6 +88,7 @@ class ConnectionViewModel(
 
     /** Stages a pairing target for the pairing dialog to consume. */
     fun beginPairing(host: String, pairingPort: Int) {
+        _pairingSucceeded.value = false
         _pendingHost.value = host
         _pendingPairingPort.value = pairingPort
         _pairingError.value = null
@@ -86,6 +107,11 @@ class ConnectionViewModel(
      * invalid input. On success the host and pairing port are persisted (the code is not).
      */
     fun pair(host: String, pairingPort: Int, code: String) {
+        if (wirelessPairing?.state?.value?.active == true) {
+            _pairingError.value = "Cancel notification pairing before using manual setup."
+            return
+        }
+        if (_isPairing.value || connectionJob?.isActive == true) return
         val trimmedHost = host.trim()
         val digits = InputValidators.filterPairingDigits(code)
         val validationError =
@@ -102,13 +128,16 @@ class ConnectionViewModel(
         }
         _pairingError.value = null
         _isPairing.value = true
-        viewModelScope.launch {
+        _pairingSucceeded.value = false
+        pairingJob = viewModelScope.launch {
             try {
                 when (val result = pairingClient.pair(trimmedHost, pairingPort, digits)) {
                     PairingResult.Success -> {
                         prefs.setLastHost(trimmedHost)
                         prefs.setLastPairingPort(pairingPort)
+                        wirelessPairing?.recordManualPairing(trimmedHost, pairingPort)
                         _pairingError.value = null
+                        _pairingSucceeded.value = true
                     }
                     PairingResult.InvalidCode ->
                         _pairingError.value =
@@ -122,6 +151,8 @@ class ConnectionViewModel(
                     is PairingResult.NetworkError ->
                         _pairingError.value = "Network error: ${result.message}"
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _pairingError.value = "Pairing failed: ${e.message ?: e.javaClass.simpleName}"
             } finally {
@@ -132,6 +163,11 @@ class ConnectionViewModel(
 
     /** Connects the ADB shell to a paired device. */
     fun connect(host: String, port: Int) {
+        if (wirelessPairing?.state?.value?.active == true) {
+            _connectError.value = "Cancel notification pairing before using manual setup."
+            return
+        }
+        if (_isPairing.value || connectionJob?.isActive == true) return
         val trimmedHost = host.trim()
         val validationError =
             when {
@@ -145,22 +181,47 @@ class ConnectionViewModel(
             return
         }
         _connectError.value = null
-        viewModelScope.launch {
-            shell
-                .connect(trimmedHost, port)
-                .onSuccess {
-                    prefs.setLastHost(trimmedHost)
-                    prefs.setLastConnectionPort(port)
-                }
-                .onFailure { e ->
-                    _connectError.value = e.message ?: "Connection failed."
-                }
+        if (wirelessPairing != null) {
+            if (!wirelessPairing.connectManual(trimmedHost, port))
+                _connectError.value = "Disconnect the active session before changing its endpoint."
+            return
+        }
+        connectionJob = viewModelScope.launch {
+            try {
+                shell
+                    .connect(trimmedHost, port)
+                    .onSuccess {
+                        if (
+                            shell.exec("id", "-u", timeoutMs = 10_000).getOrNull()?.trim() != "2000"
+                        ) {
+                            shell.disconnect()
+                            _connectError.value =
+                                "Shell UID 2000 could not be verified. System management is unavailable."
+                            return@onSuccess
+                        }
+                        prefs.setLastHost(trimmedHost)
+                        prefs.setLastConnectionPort(port)
+                    }
+                    .onFailure { e ->
+                        _connectError.value = e.message ?: "Connection failed."
+                    }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _connectError.value = e.message ?: "Connection failed."
+            }
         }
     }
 
+    fun cancelPairing() {
+        pairingJob?.cancel()
+    }
+
     fun disconnect() {
+        pairingJob?.cancel()
+        connectionJob?.cancel()
         viewModelScope.launch {
-            shell.disconnect()
+            if (wirelessPairing != null) wirelessPairing.cancel() else shell.disconnect()
         }
     }
 
@@ -176,6 +237,16 @@ class ConnectionViewModel(
             appendLine("endpoint=${lastEndpoint ?: "none"}")
             appendLine("stateChangedAt=${formatTime(lastStateChangeAt)}")
             appendLine("generatedAt=${formatTime(System.currentTimeMillis())}")
+            wirelessPairing?.state?.value?.let { workflow ->
+                appendLine("pairingPhase=${workflow.phase}")
+                appendLine("pairingVerified=${workflow.paired}")
+                appendLine("transportVerified=${workflow.transportVerified}")
+                appendLine("shellUid=${workflow.shellUid ?: "unverified"}")
+            }
+            appendLine("wirelessTrace=process-local, oldest first, bounded to 128 events")
+            id.mybase.aether.adb.pairing.AndroidPairingDiagnostics.snapshot().forEach {
+                appendLine("AetherPairing $it")
+            }
             append("note=pairing codes and keys are never stored or included")
         }
     }

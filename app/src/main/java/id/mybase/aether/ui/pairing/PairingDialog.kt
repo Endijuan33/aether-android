@@ -20,8 +20,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -30,12 +30,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
-import id.mybase.aether.adb.AdbConnectionState
 import id.mybase.aether.security.InputValidators
 import id.mybase.aether.ui.components.SectionTitle
 import id.mybase.aether.ui.connection.ConnectionViewModel
@@ -45,18 +46,18 @@ import id.mybase.aether.ui.connection.ConnectionViewModel
  *
  * Digits are filtered through [InputValidators.filterPairingDigits], so pasting a code works; the
  * boxes reflect the filtered value. Pairing runs through [ConnectionViewModel.pair] and the dialog
- * dismisses itself once the device reports [AdbConnectionState.Paired].
+ * dismisses itself after the pairing client reports success. Navigation owns the dialog window.
  */
 @Composable
 fun PairingDialog(
     connectionVm: ConnectionViewModel,
     navController: NavController,
 ) {
-    val host by connectionVm.pendingHost.collectAsState()
-    val port by connectionVm.pendingPairingPort.collectAsState()
-    val pairingError by connectionVm.pairingError.collectAsState()
-    val isPairing by connectionVm.isPairing.collectAsState()
-    val state by connectionVm.state.collectAsState()
+    val host by connectionVm.pendingHost.collectAsStateWithLifecycle()
+    val port by connectionVm.pendingPairingPort.collectAsStateWithLifecycle()
+    val pairingError by connectionVm.pairingError.collectAsStateWithLifecycle()
+    val isPairing by connectionVm.isPairing.collectAsStateWithLifecycle()
+    val pairingSucceeded by connectionVm.pairingSucceeded.collectAsStateWithLifecycle()
 
     var code by remember { mutableStateOf("") }
     val focusRequester = remember { FocusRequester() }
@@ -65,92 +66,109 @@ fun PairingDialog(
         connectionVm.clearPairingError()
         focusRequester.requestFocus()
     }
-    LaunchedEffect(state) {
-        if (state is AdbConnectionState.Paired || state is AdbConnectionState.Connected) {
+    LaunchedEffect(pairingSucceeded) {
+        if (pairingSucceeded) {
             navController.popBackStack()
         }
+    }
+    DisposableEffect(connectionVm) {
+        onDispose { connectionVm.cancelPairing() }
     }
 
     val targetReady = host != null && port != null
     val canConfirm =
         targetReady && code.length == 6 && InputValidators.isValidPairingCode(code) && !isPairing
 
-    Dialog(onDismissRequest = { if (!isPairing) navController.popBackStack() }) {
-        Card {
-            Column(
-                modifier = Modifier.padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                SectionTitle("Enter pairing code")
-                Spacer(Modifier.height(8.dp))
-                if (targetReady) {
-                    Text(
-                        text =
-                            "Pairing with $host:$port. Type the 6-digit code shown on the device.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center,
-                    )
-                } else {
-                    Text(
-                        text = "No pairing target set. Go back and start pairing again.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.error,
-                        textAlign = TextAlign.Center,
-                    )
-                }
-                Spacer(Modifier.height(20.dp))
-
-                BasicTextField(
-                    value = code,
-                    onValueChange = { code = InputValidators.filterPairingDigits(it).take(6) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                    singleLine = true,
-                    modifier = Modifier.focusRequester(focusRequester),
-                    decorationBox = {
-                        CodeBoxes(code = code)
-                    },
+    Card {
+        Column(
+            modifier = Modifier.padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            SectionTitle("Enter pairing code")
+            Spacer(Modifier.height(8.dp))
+            if (targetReady) {
+                Text(
+                    text = "Pairing with $host:$port. Type the 6-digit code shown on the device.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
                 )
-                Spacer(Modifier.height(16.dp))
+            } else {
+                Text(
+                    text = "No pairing target set. Go back and start pairing again.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                    textAlign = TextAlign.Center,
+                )
+            }
+            Spacer(Modifier.height(20.dp))
 
-                pairingError?.let {
-                    Text(
-                        text = it,
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodyMedium,
-                        textAlign = TextAlign.Center,
-                    )
-                    Spacer(Modifier.height(8.dp))
-                }
-
-                if (isPairing) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        CircularProgressIndicator(modifier = Modifier.size(24.dp))
-                        Text("Pairing…", style = MaterialTheme.typography.bodyMedium)
+            BasicTextField(
+                value = code,
+                onValueChange = { code = InputValidators.filterPairingDigits(it).take(6) },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                singleLine = true,
+                enabled = !isPairing,
+                textStyle =
+                    androidx.compose.ui.text.TextStyle(
+                        color = androidx.compose.ui.graphics.Color.Transparent,
+                    ),
+                modifier =
+                    Modifier.fillMaxWidth().focusRequester(focusRequester).semantics {
+                        contentDescription = "Six-digit pairing code"
+                    },
+                decorationBox = { innerTextField ->
+                    Box {
+                        innerTextField()
+                        CodeBoxes(code = code)
                     }
-                    Spacer(Modifier.height(16.dp))
-                }
+                },
+            )
+            Spacer(Modifier.height(16.dp))
 
+            pairingError?.let {
+                Text(
+                    text = it,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodyMedium,
+                    textAlign = TextAlign.Center,
+                )
+                Spacer(Modifier.height(8.dp))
+            }
+
+            if (isPairing) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    TextButton(
-                        onClick = { navController.popBackStack() },
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Text("Cancel")
-                    }
-                    Button(
-                        onClick = { connectionVm.pair(host!!, port!!, code) },
-                        enabled = canConfirm,
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Text("Confirm")
-                    }
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                    Text("Pairing…", style = MaterialTheme.typography.bodyMedium)
+                }
+                Spacer(Modifier.height(16.dp))
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                TextButton(
+                    onClick = {
+                        connectionVm.cancelPairing()
+                        navController.popBackStack()
+                    },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("Cancel")
+                }
+                Button(
+                    onClick = {
+                        connectionVm.pair(host!!, port!!, code)
+                        code = ""
+                    },
+                    enabled = canConfirm,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("Confirm")
                 }
             }
         }
@@ -159,13 +177,14 @@ fun PairingDialog(
 
 @Composable
 private fun CodeBoxes(code: String) {
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         repeat(6) { index ->
             val digit = code.getOrNull(index)?.toString() ?: ""
             val filled = digit.isNotEmpty()
             Box(
                 modifier =
-                    Modifier.size(46.dp)
+                    Modifier.weight(1f)
+                        .height(48.dp)
                         .border(
                             width = 1.dp,
                             color =

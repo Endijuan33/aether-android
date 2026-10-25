@@ -4,6 +4,7 @@ import app.cash.turbine.test
 import id.mybase.aether.adb.AdbConnectionState
 import id.mybase.aether.adb.PairingResult
 import id.mybase.aether.persistence.AetherPreferences
+import id.mybase.aether.persistence.InMemoryPreferencesDataStore
 import id.mybase.aether.ui.fakes.FakeAdbShell
 import id.mybase.aether.ui.fakes.FakeContext
 import id.mybase.aether.ui.fakes.FakePairingClient
@@ -17,7 +18,6 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
-import org.junit.Ignore
 import org.junit.Rule
 import org.junit.Test
 
@@ -38,7 +38,7 @@ class ConnectionViewModelTest {
     fun setUp() {
         shell = FakeAdbShell()
         client = FakePairingClient()
-        prefs = AetherPreferences(FakeContext())
+        prefs = AetherPreferences(InMemoryPreferencesDataStore())
         vm = ConnectionViewModel(shell, client, prefs)
     }
 
@@ -149,7 +149,6 @@ class ConnectionViewModelTest {
     }
 
     @Test
-    @Ignore("Flaky: uses real DataStore file IO. TODO: inject in-memory DataStore for tests.")
     fun `connect success persists connection port`() = runBlocking {
         // Uses the MainDispatcherRule's UnconfinedTestDispatcher (set at class level),
         // which executes viewModelScope coroutines eagerly on the calling thread.
@@ -183,6 +182,16 @@ class ConnectionViewModelTest {
         assertEquals(1, shell.connectCalls)
         assertEquals("refused", vm.connectError.value)
     }
+
+    @Test
+    fun `manual connection with non shell uid disconnects without remembering port`() =
+        runBlocking {
+            shell.execResult = Result.success("0")
+            vm.connect("127.0.0.1", 39001)
+            assertTrue(shell.state.value is AdbConnectionState.Disconnected)
+            assertNull(prefs.lastConnectionPort.first())
+            assertTrue(vm.connectError.value!!.contains("UID 2000"))
+        }
 
     @Test
     fun `disconnect delegates to shell`() {

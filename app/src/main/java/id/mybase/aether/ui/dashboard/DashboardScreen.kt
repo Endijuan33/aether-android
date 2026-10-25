@@ -25,12 +25,12 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
-import id.mybase.aether.adb.AdbConnectionState
+import id.mybase.aether.adb.pairing.WirelessPairingController
 import id.mybase.aether.domain.AppKind
 import id.mybase.aether.domain.OperationType
 import id.mybase.aether.domain.kind
@@ -44,6 +44,8 @@ import id.mybase.aether.ui.connection.ConnectionViewModel
 import id.mybase.aether.ui.history.HistoryViewModel
 import id.mybase.aether.ui.navigation.Routes
 import id.mybase.aether.ui.packages.PackagesViewModel
+import id.mybase.aether.ui.pairing.PairingActions
+import id.mybase.aether.ui.pairing.WirelessConnectionCard
 
 /**
  * Home screen: connection state, scanned package counts, recent operations, and the three primary
@@ -57,12 +59,12 @@ fun DashboardScreen(
     historyVm: HistoryViewModel,
     navController: NavController,
     prefs: AetherPreferences,
+    pairingController: WirelessPairingController,
+    pairingActions: PairingActions,
 ) {
-    val state by connectionVm.state.collectAsState()
-    val uiState by packagesVm.uiState.collectAsState()
-    val records by historyVm.records.collectAsState()
-    val lastHost by prefs.lastHost.collectAsState(initial = null)
-    val lastPairingPort by prefs.lastPairingPort.collectAsState(initial = null)
+    val state by pairingController.state.collectAsStateWithLifecycle()
+    val uiState by packagesVm.uiState.collectAsStateWithLifecycle()
+    val records by historyVm.records.collectAsStateWithLifecycle()
 
     LaunchedEffect(Unit) { historyVm.refresh() }
 
@@ -85,7 +87,7 @@ fun DashboardScreen(
             modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            item { ConnectionCard(state = state) }
+            item { WirelessConnectionCard(state = state) }
 
             item {
                 Card(Modifier.fillMaxWidth()) {
@@ -130,16 +132,16 @@ fun DashboardScreen(
                 ) {
                     Button(
                         onClick = {
-                            if (lastHost != null && lastPairingPort != null) {
-                                connectionVm.beginPairing(lastHost!!, lastPairingPort!!)
-                                navController.navigate(Routes.PAIRING_DIALOG)
-                            } else {
-                                navController.navigate(Routes.SETUP_GUIDE)
-                            }
+                            pairingActions.start(false, false)
+                            navController.navigate(Routes.SETUP_GUIDE)
                         },
+                        enabled = true,
                         modifier = Modifier.weight(1f),
                     ) {
-                        Text("Connect")
+                        Text(
+                            if (state.active || state.ready) "Connection details"
+                            else "PAIR & CONNECT",
+                        )
                     }
                     OutlinedButton(
                         onClick = {
@@ -205,47 +207,3 @@ fun DashboardScreen(
 /** History stores the operation as its enum name; map it back for display. */
 private fun operationLabel(stored: String): String =
     OperationType.entries.firstOrNull { it.name == stored }?.label() ?: stored
-
-@Composable
-private fun ConnectionCard(state: AdbConnectionState) {
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp)) {
-            Text(
-                text = "Connection",
-                style = MaterialTheme.typography.titleMedium,
-            )
-            Spacer(Modifier.height(8.dp))
-            when (state) {
-                is AdbConnectionState.Disconnected ->
-                    Text("Disconnected", style = MaterialTheme.typography.bodyLarge)
-                is AdbConnectionState.Pairing ->
-                    Text(
-                        "Pairing with ${state.host}:${state.port}…",
-                        style = MaterialTheme.typography.bodyLarge,
-                    )
-                is AdbConnectionState.Paired ->
-                    Text(
-                        "Paired — connect ADB to start managing apps.",
-                        style = MaterialTheme.typography.bodyLarge,
-                    )
-                is AdbConnectionState.Connecting ->
-                    Text(
-                        "Connecting to ${state.host}:${state.port}…",
-                        style = MaterialTheme.typography.bodyLarge,
-                    )
-                is AdbConnectionState.Connected ->
-                    Text(
-                        "Connected to ${state.host}:${state.port}",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.tertiary,
-                    )
-                is AdbConnectionState.Failed ->
-                    Text(
-                        "Failed: ${state.reason}",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-            }
-        }
-    }
-}

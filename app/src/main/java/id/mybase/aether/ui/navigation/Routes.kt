@@ -12,6 +12,7 @@ object Routes {
     const val DASHBOARD = "dashboard"
     const val ONBOARDING = "onboarding"
     const val SETUP_GUIDE = "setup_guide"
+    const val ADVANCED_PAIRING = "advanced_pairing"
     const val DIAGNOSTICS = "diagnostics"
     const val APPS = "apps"
     const val APP_DETAILS = "app_details/{packageName}"

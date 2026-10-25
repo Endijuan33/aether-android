@@ -2,6 +2,7 @@ package id.mybase.aether.ui.navigation
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.window.DialogProperties
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -23,10 +24,12 @@ import id.mybase.aether.ui.history.HistoryViewModel
 import id.mybase.aether.ui.onboarding.OnboardingScreen
 import id.mybase.aether.ui.packages.PackagesViewModel
 import id.mybase.aether.ui.pairing.PairingDialog
+import id.mybase.aether.ui.pairing.rememberPairingActions
 import id.mybase.aether.ui.recovery.RecoveryScreen
 import id.mybase.aether.ui.recovery.RecoveryViewModel
 import id.mybase.aether.ui.settings.SettingsScreen
 import id.mybase.aether.ui.settings.SettingsViewModel
+import id.mybase.aether.ui.setup.AdvancedPairingScreen
 import id.mybase.aether.ui.setup.SetupGuideScreen
 
 /**
@@ -40,9 +43,15 @@ fun AetherNavHost(
     modifier: Modifier = Modifier,
 ) {
     val navController = rememberNavController()
+    val pairingActions = rememberPairingActions(container.wirelessPairing)
 
     val connectionVm: ConnectionViewModel = activityViewModel {
-        ConnectionViewModel(container.shell, container.pairingClient, container.prefs)
+        ConnectionViewModel(
+            container.shell,
+            container.pairingClient,
+            container.prefs,
+            container.wirelessPairing,
+        )
     }
     val packagesVm: PackagesViewModel = activityViewModel {
         PackagesViewModel(
@@ -78,10 +87,19 @@ fun AetherNavHost(
                 historyVm = historyVm,
                 navController = navController,
                 prefs = container.prefs,
+                pairingController = container.wirelessPairing,
+                pairingActions = pairingActions,
             )
         }
         composable(Routes.SETUP_GUIDE) {
             SetupGuideScreen(
+                controller = container.wirelessPairing,
+                actions = pairingActions,
+                navController = navController,
+            )
+        }
+        composable(Routes.ADVANCED_PAIRING) {
+            AdvancedPairingScreen(
                 connectionVm = connectionVm,
                 navController = navController,
                 prefs = container.prefs,
@@ -143,7 +161,10 @@ fun AetherNavHost(
         dialog(Routes.PAIRING_DIALOG) {
             PairingDialog(connectionVm = connectionVm, navController = navController)
         }
-        dialog(Routes.PREVIEW_DIALOG) {
+        dialog(
+            Routes.PREVIEW_DIALOG,
+            dialogProperties = DialogProperties(usePlatformDefaultWidth = false),
+        ) {
             PreviewDialog(packagesVm = packagesVm, navController = navController)
         }
     }
