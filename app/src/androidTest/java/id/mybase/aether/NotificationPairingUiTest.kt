@@ -83,7 +83,7 @@ class NotificationPairingUiTest {
     @Test
     fun primaryPairingRequestsNotificationFlowAndShowsNoManualPorts() {
         showGuide()
-        compose.onNodeWithText("PAIR & CONNECT").performClick()
+        compose.onNodeWithText("PAIR & CONNECT").performScrollTo().performClick()
         compose.onNodeWithText("Waiting for pairing code — discovery is running").assertExists()
         assertEquals(listOf(false to false), requested)
         compose.onNodeWithText("Device IP / host").assertDoesNotExist()
@@ -100,7 +100,7 @@ class NotificationPairingUiTest {
         compose
             .onNodeWithText("Notification permission denied. Use in-app discovery.")
             .assertExists()
-        compose.onNodeWithText("Start in-app discovery fallback").performClick()
+        compose.onNodeWithText("Start in-app discovery fallback").performScrollTo().performClick()
         assertEquals(listOf(true to false), requested)
         compose.onNodeWithText("Searching for pairing service…").assertExists()
     }
@@ -108,12 +108,16 @@ class NotificationPairingUiTest {
     @Test
     fun discoveredFallbackInputRequiresSixDigitsAndPreventsDuplicateSubmission() {
         showGuide()
-        compose.onNodeWithText("Start in-app discovery fallback").performClick()
+        compose.onNodeWithText("Start in-app discovery fallback").performScrollTo().performClick()
         compose.runOnUiThread { found.value = DiscoveredAdbEndpoint("local", "127.0.0.1", 37001) }
-        compose.onNodeWithText("Six-digit pairing code").performTextInput("12345")
+        compose.onNodeWithText("Six-digit pairing code").performScrollTo().performTextInput("12345")
         compose.onNodeWithText("Submit pairing code").assertIsNotEnabled()
-        compose.onNodeWithText("Six-digit pairing code").performTextInput("6")
-        compose.onNodeWithText("Submit pairing code").assertIsEnabled().performClick()
+        compose.onNodeWithText("Six-digit pairing code").performScrollTo().performTextInput("6")
+        compose
+            .onNodeWithText("Submit pairing code")
+            .assertIsEnabled()
+            .performScrollTo()
+            .performClick()
         compose.onNodeWithText("Pairing authentication in progress…").assertExists()
         compose.onNodeWithText("Submit pairing code").assertDoesNotExist()
         assertEquals(1, pairingCalls)
@@ -122,9 +126,9 @@ class NotificationPairingUiTest {
     @Test
     fun cancellationRestoresPrimaryPairingAndRemovesCodeEditor() {
         showGuide()
-        compose.onNodeWithText("Start in-app discovery fallback").performClick()
+        compose.onNodeWithText("Start in-app discovery fallback").performScrollTo().performClick()
         compose.runOnUiThread { found.value = DiscoveredAdbEndpoint("local", "127.0.0.1", 37001) }
-        compose.onNodeWithText("Cancel pairing").performClick()
+        compose.onNodeWithText("Cancel pairing").performScrollTo().performClick()
         compose.onNodeWithText("Pairing cancelled").assertExists()
         compose.onNodeWithText("PAIR & CONNECT").assertIsEnabled()
         compose.onNodeWithText("Six-digit pairing code").assertDoesNotExist()
@@ -133,9 +137,16 @@ class NotificationPairingUiTest {
     @Test
     fun inAppCodeSubmissionCanPrecedeDiscovery() {
         showGuide()
-        compose.onNodeWithText("Start in-app discovery fallback").performClick()
-        compose.onNodeWithText("Six-digit pairing code").performTextInput("123456")
-        compose.onNodeWithText("Submit pairing code").assertIsEnabled().performClick()
+        compose.onNodeWithText("Start in-app discovery fallback").performScrollTo().performClick()
+        compose
+            .onNodeWithText("Six-digit pairing code")
+            .performScrollTo()
+            .performTextInput("123456")
+        compose
+            .onNodeWithText("Submit pairing code")
+            .assertIsEnabled()
+            .performScrollTo()
+            .performClick()
         compose.onNodeWithText("Searching for pairing service…").assertExists()
         assertEquals(0, pairingCalls)
         compose.runOnUiThread { found.value = DiscoveredAdbEndpoint("local", "127.0.0.1", 37001) }
@@ -146,8 +157,8 @@ class NotificationPairingUiTest {
     @Test
     fun activityRecreationKeepsDiscoverySessionAndClearsUnsubmittedCode() {
         showGuide()
-        compose.onNodeWithText("Start in-app discovery fallback").performClick()
-        compose.onNodeWithText("Six-digit pairing code").performTextInput("12345")
+        compose.onNodeWithText("Start in-app discovery fallback").performScrollTo().performClick()
+        compose.onNodeWithText("Six-digit pairing code").performScrollTo().performTextInput("12345")
         val originalSession = controller.state.value.sessionId
         compose.activityRule.scenario.recreate()
         compose.activityRule.scenario.onActivity { activity ->
@@ -161,9 +172,16 @@ class NotificationPairingUiTest {
         assertEquals(originalSession, controller.state.value.sessionId)
         assertTrue(controller.state.value.active)
         compose.onNodeWithText("Six-digit pairing code").assertDoesNotExist()
-        compose.onNodeWithText("Use in-app code input").performClick()
-        compose.onNodeWithText("Six-digit pairing code").performTextInput("123456")
-        compose.onNodeWithText("Submit pairing code").assertIsEnabled().performClick()
+        compose.onNodeWithText("Use in-app code input").performScrollTo().performClick()
+        compose
+            .onNodeWithText("Six-digit pairing code")
+            .performScrollTo()
+            .performTextInput("123456")
+        compose
+            .onNodeWithText("Submit pairing code")
+            .assertIsEnabled()
+            .performScrollTo()
+            .performClick()
         assertEquals(0, pairingCalls)
         compose.runOnUiThread { found.value = DiscoveredAdbEndpoint("local", "127.0.0.1", 37001) }
         compose.onNodeWithText("Pairing authentication in progress…").assertExists()
