@@ -27,6 +27,7 @@ private val ATTRIBUTIONS =
         "Kotlin Coroutines & Flow — async work (Apache-2.0)",
         "DataStore — preferences storage (Apache-2.0)",
         "AndroidX SplashScreen — launch screen (Apache-2.0)",
+        "Conscrypt — pairing TLS exporter (Apache-2.0); BoringSSL native license notices ship in assets/licenses",
     )
 
 /**
@@ -78,9 +79,9 @@ fun AboutScreen(navController: NavController) {
             InfoCard(
                 title = "Validation status",
                 body =
-                    "Hardware-validated against real-device wireless debugging (ADB over Wi-Fi). " +
-                        "No emulator or rooted device is required; wireless debugging is available on " +
-                        "stock Android 11 and later.",
+                    "Pairing, connection and package operations have not been validated on real hardware. " +
+                        "Automated tests and builds do not establish device compatibility. " +
+                        "Wireless debugging requires Android 11 or later.",
             )
             Spacer(Modifier.height(8.dp))
             Text(

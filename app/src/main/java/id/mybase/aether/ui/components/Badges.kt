@@ -15,6 +15,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import id.mybase.aether.domain.AppKind
 import id.mybase.aether.domain.OperationStatus
@@ -34,7 +36,10 @@ fun SafetyDot(rating: SafetyRating, modifier: Modifier = Modifier) {
             SafetyRating.ESSENTIAL -> MaterialTheme.colorScheme.error
         }
     Box(
-        modifier = modifier.size(12.dp).clip(CircleShape).background(color),
+        modifier =
+            modifier.size(12.dp).clip(CircleShape).background(color).semantics {
+                contentDescription = "Safety: ${rating.name.lowercase()}"
+            },
     )
 }
 
@@ -87,8 +92,13 @@ fun StatusBadge(status: OperationStatus, modifier: Modifier = Modifier) {
             OperationStatus.SUCCESS -> MaterialTheme.colorScheme.tertiaryContainer
             OperationStatus.FAILED -> MaterialTheme.colorScheme.errorContainer
             OperationStatus.SKIPPED -> MaterialTheme.colorScheme.surfaceVariant
+            OperationStatus.IN_PROGRESS -> MaterialTheme.colorScheme.secondaryContainer
         }
-    Pill(text = status.name, color = color, modifier = modifier)
+    Pill(
+        text = if (status == OperationStatus.IN_PROGRESS) "UNVERIFIED" else status.name,
+        color = color,
+        modifier = modifier,
+    )
 }
 
 /**
@@ -118,8 +128,8 @@ fun OperationBadge(type: OperationType, modifier: Modifier = Modifier) {
 private fun Pill(
     text: String,
     color: Color,
-    contentColor: Color = MaterialTheme.colorScheme.onSurface,
     modifier: Modifier = Modifier,
+    contentColor: Color = MaterialTheme.colorScheme.onSurface,
 ) {
     Surface(
         color = color,

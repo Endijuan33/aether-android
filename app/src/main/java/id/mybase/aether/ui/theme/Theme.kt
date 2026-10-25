@@ -12,10 +12,10 @@ private val DarkColorScheme =
         onPrimary = Graphite900,
         primaryContainer = Graphite700,
         onPrimaryContainer = ElectricCyan,
-        secondary = RestrainedBlue,
+        secondary = Color(0xFF2E65DC),
         onSecondary = Color.White,
         secondaryContainer = Graphite700,
-        onSecondaryContainer = RestrainedBlue,
+        onSecondaryContainer = Color(0xFF83AAFF),
         tertiary = Success,
         onTertiary = Graphite900,
         background = Graphite900,
@@ -28,17 +28,17 @@ private val DarkColorScheme =
         onError = Graphite900,
         errorContainer = Graphite700,
         onErrorContainer = Error,
-        outline = Graphite700,
+        outline = TextSecondary,
         outlineVariant = Graphite800,
     )
 
 private val LightColorScheme =
     lightColorScheme(
-        primary = Color(0xFF00967F),
+        primary = Color(0xFF007D69),
         onPrimary = Color.White,
         primaryContainer = Color(0xFF9CF2E2),
         onPrimaryContainer = Color(0xFF00201A),
-        secondary = RestrainedBlue,
+        secondary = Color(0xFF2E65DC),
         onSecondary = Color.White,
         secondaryContainer = Color(0xFFDCE6FF),
         onSecondaryContainer = Color(0xFF001849),

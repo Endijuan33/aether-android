@@ -1,5 +1,6 @@
 package id.mybase.aether.ui.apps
 
+import android.content.ClipData
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -21,13 +22,14 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import id.mybase.aether.domain.OperationType
 import id.mybase.aether.domain.SafetyRating
@@ -45,6 +47,7 @@ import id.mybase.aether.ui.components.formatEpochMillis
 import id.mybase.aether.ui.connection.ConnectionViewModel
 import id.mybase.aether.ui.navigation.Routes
 import id.mybase.aether.ui.packages.PackagesViewModel
+import kotlinx.coroutines.launch
 
 /**
  * Details for one installed package: identity, safety rating with catalogue note, permissions,
@@ -62,9 +65,10 @@ fun AppDetailsScreen(
     catalogue: SafetyCatalogue,
     navController: NavController,
 ) {
-    val uiState by packagesVm.uiState.collectAsState()
-    val connected by packagesVm.isConnected.collectAsState()
-    val clipboard = LocalClipboardManager.current
+    val uiState by packagesVm.uiState.collectAsStateWithLifecycle()
+    val connected by packagesVm.isConnected.collectAsStateWithLifecycle()
+    val clipboard = LocalClipboard.current
+    val scope = rememberCoroutineScope()
 
     val app = uiState.apps.find { it.packageName == packageName }
 
@@ -109,7 +113,15 @@ fun AppDetailsScreen(
                             modifier = Modifier.weight(1f),
                         )
                         IconButton(
-                            onClick = { clipboard.setText(AnnotatedString(app.packageName)) },
+                            onClick = {
+                                scope.launch {
+                                    clipboard.setClipEntry(
+                                        ClipEntry(
+                                            ClipData.newPlainText("Package name", app.packageName),
+                                        ),
+                                    )
+                                }
+                            },
                         ) {
                             Icon(Icons.Filled.ContentCopy, contentDescription = "Copy package name")
                         }

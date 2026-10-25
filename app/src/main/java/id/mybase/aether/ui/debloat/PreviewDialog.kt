@@ -17,7 +17,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -27,8 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import id.mybase.aether.domain.OperationType
 import id.mybase.aether.domain.RiskLevel
@@ -46,76 +44,88 @@ import id.mybase.aether.ui.packages.PreviewItem
 
 /**
  * Pre-execution preview shown as a dialog: per item the app, its classification, the operation, the
- * risk badge and reversibility, plus a recovery-limitation note. ESSENTIAL or CRITICAL items raise
- * a blocking warning that requires an explicit "I understand the risk" confirmation. Confirming
- * executes and moves to the progress screen.
+ * risk badge and reversibility, plus a recovery-limitation note. Essential/AETHER mutations are
+ * blocked; unknown and non-low-risk items require explicit acknowledgement. Navigation owns the
+ * dialog window. Confirming executes and moves to the progress screen.
  */
 @Composable
 fun PreviewDialog(
     packagesVm: PackagesViewModel,
     navController: NavController,
 ) {
-    val items by packagesVm.previewItems.collectAsState()
-    val type by packagesVm.previewType.collectAsState()
-    var acknowledged by rememberSaveable { mutableStateOf(false) }
+    val items by packagesVm.previewItems.collectAsStateWithLifecycle()
+    val type by packagesVm.previewType.collectAsStateWithLifecycle()
+    val connected by packagesVm.isConnected.collectAsStateWithLifecycle()
+    val executing by packagesVm.isExecuting.collectAsStateWithLifecycle()
+    var acknowledged by rememberSaveable(items, type) { mutableStateOf(false) }
 
     val blocking = items.any {
-        it.rating == SafetyRating.ESSENTIAL || it.risk == RiskLevel.CRITICAL
+        type != OperationType.ENABLE &&
+            (it.rating == SafetyRating.ESSENTIAL ||
+                it.app.packageName in setOf("id.mybase.aether", "id.mybase.aether.debug"))
     }
-    val canConfirm = items.isNotEmpty() && type != null && (!blocking || acknowledged)
+    val needsAcknowledgement = items.any {
+        it.rating != SafetyRating.SAFE || it.risk != RiskLevel.LOW
+    }
+    val canConfirm =
+        items.isNotEmpty() &&
+            type != null &&
+            connected &&
+            !executing &&
+            !blocking &&
+            (!needsAcknowledgement || acknowledged)
 
-    Dialog(
-        onDismissRequest = { navController.popBackStack() },
-        properties = DialogProperties(usePlatformDefaultWidth = false),
-    ) {
-        Card(modifier = Modifier.padding(16.dp)) {
-            Column(Modifier.padding(20.dp)) {
-                SectionTitle("Preview (${items.size})")
-                Spacer(Modifier.height(4.dp))
-                type?.let { OperationBadge(it) }
-                Spacer(Modifier.height(12.dp))
+    Card(modifier = Modifier.padding(16.dp)) {
+        Column(Modifier.padding(20.dp)) {
+            SectionTitle("Preview (${items.size})")
+            Spacer(Modifier.height(4.dp))
+            type?.let { OperationBadge(it) }
+            Spacer(Modifier.height(12.dp))
 
-                if (items.isEmpty()) {
-                    Text(
-                        "Nothing to preview. Select at least one app first.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                } else {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxWidth().weight(1f, fill = false),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        items(items, key = { it.app.packageName }) { item ->
-                            PreviewItemCard(item = item, type = type!!)
-                        }
+            if (items.isEmpty()) {
+                Text(
+                    "Nothing to preview. Select at least one app first.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth().weight(1f, fill = false),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    items(items, key = { it.app.packageName }) { item ->
+                        PreviewItemCard(item = item, type = type!!)
                     }
                 }
+            }
 
-                if (blocking) {
-                    Spacer(Modifier.height(12.dp))
-                    Card(
-                        colors =
-                            CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.errorContainer,
-                            ),
-                    ) {
-                        Column(Modifier.padding(12.dp)) {
-                            Text(
-                                "Blocking warning",
-                                style = MaterialTheme.typography.titleSmall,
-                                color = MaterialTheme.colorScheme.onErrorContainer,
-                            )
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                text =
-                                    "This selection includes ESSENTIAL apps or CRITICAL-risk operations. " +
-                                        "Removing or disabling them can break core device functions, " +
-                                        "and recovery may require the original APK or a factory reset.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onErrorContainer,
-                            )
-                            Spacer(Modifier.height(8.dp))
+            if (!connected) Text("Connect and verify the ADB shell before executing.")
+            if (blocking || needsAcknowledgement) {
+                Spacer(Modifier.height(12.dp))
+                Card(
+                    colors =
+                        CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer,
+                        ),
+                ) {
+                    Column(Modifier.padding(12.dp)) {
+                        Text(
+                            if (blocking) "Protected selection" else "Risk acknowledgement",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text =
+                                if (blocking)
+                                    "Essential packages and AETHER cannot be disabled or uninstalled. Remove them from the selection."
+                                else
+                                    "This selection includes unknown or potentially risky operations. Device functions may break. Uninstall cannot be rolled back here; recovery may require the original APK or a factory reset.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        if (!blocking)
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Checkbox(
                                     checked = acknowledged,
@@ -131,36 +141,35 @@ fun PreviewDialog(
                                     color = MaterialTheme.colorScheme.onErrorContainer,
                                 )
                             }
-                        }
                     }
                 }
+            }
 
-                Spacer(Modifier.height(16.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+            Spacer(Modifier.height(16.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                TextButton(
+                    onClick = {
+                        packagesVm.clearPreview()
+                        navController.popBackStack()
+                    },
+                    modifier = Modifier.weight(1f),
                 ) {
-                    TextButton(
-                        onClick = {
-                            packagesVm.clearPreview()
-                            navController.popBackStack()
-                        },
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Text("Cancel")
-                    }
-                    Button(
-                        onClick = {
-                            packagesVm.executePreview()
-                            navController.navigate(Routes.PROGRESS) {
-                                popUpTo(Routes.PREVIEW_DIALOG) { inclusive = true }
-                            }
-                        },
-                        enabled = canConfirm,
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Text("Confirm")
-                    }
+                    Text("Cancel")
+                }
+                Button(
+                    onClick = {
+                        packagesVm.executePreview()
+                        navController.navigate(Routes.PROGRESS) {
+                            popUpTo(Routes.PREVIEW_DIALOG) { inclusive = true }
+                        }
+                    },
+                    enabled = canConfirm,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("Confirm")
                 }
             }
         }

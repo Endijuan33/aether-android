@@ -1,0 +1,146 @@
+package id.mybase.aether
+
+import androidx.activity.ComponentActivity
+import androidx.compose.ui.test.*
+import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.navigation.compose.rememberNavController
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import id.mybase.aether.adb.AdbConnectionState
+import id.mybase.aether.adb.AdbShell
+import id.mybase.aether.domain.*
+import id.mybase.aether.packages.*
+import id.mybase.aether.persistence.InMemoryOperationHistoryStore
+import id.mybase.aether.ui.apps.AppListScreen
+import id.mybase.aether.ui.debloat.PreviewDialog
+import id.mybase.aether.ui.packages.PackagesViewModel
+import id.mybase.aether.ui.theme.AetherTheme
+import kotlinx.coroutines.flow.MutableStateFlow
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+
+@RunWith(AndroidJUnit4::class)
+class ScreenRegressionTest {
+    @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
+
+    private fun app(pkg: String, label: String) =
+        AppPackage(pkg, label, "1", 1, false, true, false, null, 30, emptyList(), 0, 0)
+
+    private fun vm(
+        rating: SafetyRating = SafetyRating.UNKNOWN,
+        connected: Boolean = true,
+        scanFailure: Boolean = false,
+        empty: Boolean = false,
+    ): PackagesViewModel {
+        val apps =
+            if (empty) emptyList()
+            else listOf(app("com.example.alpha", "Alpha"), app("com.example.beta", "Beta"))
+        val repo =
+            object : PackageRepository {
+                override suspend fun getInstalledPackages(): List<AppPackage> {
+                    check(!scanFailure) { "Inventory unavailable" }
+                    return apps
+                }
+            }
+        val catalogue =
+            MapSafetyCatalogue(
+                "test",
+                apps.associate {
+                    it.packageName to
+                        CatalogueEntry(
+                            it.packageName,
+                            rating,
+                            "Fixture",
+                            "test fixture",
+                            "test",
+                            "2026-10-25",
+                        )
+                },
+            )
+        val shell =
+            object : AdbShell {
+                override val state =
+                    MutableStateFlow<AdbConnectionState>(
+                        if (connected) AdbConnectionState.Connected("127.0.0.1", 37123)
+                        else AdbConnectionState.Disconnected,
+                    )
+
+                override suspend fun connect(host: String, port: Int, timeoutMs: Long) =
+                    Result.success(Unit)
+
+                override suspend fun disconnect() = Unit
+
+                override suspend fun exec(vararg args: String, timeoutMs: Long) =
+                    Result.failure<String>(
+                        IllegalStateException("UI fixture does not execute mutations"),
+                    )
+            }
+        val history = InMemoryOperationHistoryStore()
+        return PackagesViewModel(
+            repo,
+            catalogue,
+            PackageOperationExecutor(shell, history, catalogue),
+            shell,
+            history,
+        )
+    }
+
+    private fun preview(vm: PackagesViewModel) {
+        compose.runOnUiThread {
+            vm.loadApps()
+            vm.prepareSinglePreview("com.example.alpha", OperationType.DISABLE)
+        }
+        compose.setContent { AetherTheme { PreviewDialog(vm, rememberNavController()) } }
+    }
+
+    @Test
+    fun unknownPreviewRequiresAcknowledgement() {
+        preview(vm())
+        compose.onNodeWithText("Confirm").assertIsNotEnabled()
+        compose.onNodeWithContentDescription("I understand the risk").performClick()
+        compose.onNodeWithText("Confirm").assertIsEnabled()
+    }
+
+    @Test
+    fun essentialPreviewCannotBeConfirmed() {
+        preview(vm(SafetyRating.ESSENTIAL))
+        compose.onNodeWithText("Protected selection").assertExists()
+        compose.onNodeWithText("Confirm").assertIsNotEnabled()
+        compose.onNodeWithContentDescription("I understand the risk").assertDoesNotExist()
+    }
+
+    @Test
+    fun offlinePreviewCannotBeConfirmed() {
+        preview(vm(SafetyRating.SAFE, connected = false))
+        compose.onNodeWithText("Confirm").assertIsNotEnabled()
+        compose.onNodeWithText("Connect and verify the ADB shell before executing.").assertExists()
+    }
+
+    @Test
+    fun packageSearchFiltersActualInventoryState() {
+        val vm = vm()
+        compose.runOnUiThread { vm.loadApps() }
+        compose.setContent { AetherTheme { AppListScreen(vm, rememberNavController()) } }
+        compose.onNodeWithText("Search apps").performTextInput("beta")
+        compose.onNodeWithText("Beta").assertExists()
+        compose.onNodeWithText("Alpha").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Refresh inventory").assertIsEnabled()
+    }
+
+    @Test
+    fun inventoryFailureShowsRetry() {
+        val vm = vm(scanFailure = true)
+        compose.runOnUiThread { vm.loadApps() }
+        compose.setContent { AetherTheme { AppListScreen(vm, rememberNavController()) } }
+        compose.onNodeWithText("Scan failed: Inventory unavailable").assertExists()
+        compose.onNodeWithText("Retry").assertExists().performClick()
+        compose.onNodeWithText("Scan failed: Inventory unavailable").assertExists()
+    }
+
+    @Test
+    fun emptyPreviewDoesNotAllowExecution() {
+        preview(vm(empty = true))
+        compose.onNodeWithText("Nothing to preview. Select at least one app first.").assertExists()
+        compose.onNodeWithText("Confirm").assertIsNotEnabled()
+    }
+}

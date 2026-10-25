@@ -1,6 +1,8 @@
 package id.mybase.aether.ui.apps
 
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -16,6 +18,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.FilterChip
@@ -26,14 +29,16 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import id.mybase.aether.domain.AppKind
 import id.mybase.aether.domain.AppPackage
@@ -47,6 +52,10 @@ import id.mybase.aether.ui.components.SafetyDot
 import id.mybase.aether.ui.navigation.Routes
 import id.mybase.aether.ui.packages.AppSort
 import id.mybase.aether.ui.packages.PackagesViewModel
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private val KIND_FILTERS: List<Pair<String, AppKind?>> =
     listOf(
@@ -66,10 +75,43 @@ fun AppListScreen(
     packagesVm: PackagesViewModel,
     navController: NavController,
 ) {
-    val uiState by packagesVm.uiState.collectAsState()
-    val apps by packagesVm.visibleApps.collectAsState()
-    val clipboard = LocalClipboardManager.current
+    val uiState by packagesVm.uiState.collectAsStateWithLifecycle()
+    val apps by packagesVm.visibleApps.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var exporting by remember { mutableStateOf(false) }
+    val exportLauncher =
+        rememberLauncherForActivityResult(
+            ActivityResultContracts.CreateDocument("application/json"),
+        ) { uri ->
+            if (uri != null) {
+                val inventory = uiState.apps.map { it to packagesVm.ratingFor(it) }
+                exporting = true
+                scope.launch {
+                    val message =
+                        try {
+                            withContext(Dispatchers.IO) {
+                                val json = exportInventoryJson(inventory)
+                                requireNotNull(
+                                        context.contentResolver.openOutputStream(uri, "wt"),
+                                    ) {
+                                        "Document provider did not open the file"
+                                    }
+                                    .bufferedWriter(Charsets.UTF_8)
+                                    .use { it.write(json) }
+                            }
+                            "Inventory JSON saved"
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            "Export failed. The selected file may be incomplete; retry saving it."
+                        } finally {
+                            exporting = false
+                        }
+                    Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                }
+            }
+        }
 
     Scaffold(
         topBar = {
@@ -77,21 +119,14 @@ fun AppListScreen(
                 title = "Apps",
                 navController = navController,
                 actions = {
+                    IconButton(onClick = packagesVm::loadApps, enabled = !uiState.isLoading) {
+                        Icon(Icons.Filled.Refresh, contentDescription = "Refresh inventory")
+                    }
                     IconButton(
                         onClick = {
-                            val json =
-                                exportInventoryJson(
-                                    uiState.apps.map { it to packagesVm.ratingFor(it) },
-                                )
-                            clipboard.setText(AnnotatedString(json))
-                            Toast.makeText(
-                                    context,
-                                    "Inventory JSON copied to clipboard",
-                                    Toast.LENGTH_SHORT,
-                                )
-                                .show()
+                            exportLauncher.launch("aether-inventory.json")
                         },
-                        enabled = uiState.apps.isNotEmpty(),
+                        enabled = uiState.apps.isNotEmpty() && !exporting,
                     ) {
                         Icon(Icons.Filled.Share, contentDescription = "Export inventory as JSON")
                     }
@@ -151,6 +186,12 @@ fun AppListScreen(
             )
             Spacer(Modifier.height(8.dp))
 
+            if (uiState.warnings.isNotEmpty()) {
+                Text(
+                    "Partial inventory: ${uiState.warnings.size} packages could not be read. Refresh to retry.",
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
             when {
                 uiState.isLoading -> LoadingRow("Scanning installed apps…")
                 uiState.error != null ->

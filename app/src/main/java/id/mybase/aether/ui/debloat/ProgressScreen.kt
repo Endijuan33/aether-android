@@ -21,11 +21,11 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import id.mybase.aether.domain.OperationStatus
 import id.mybase.aether.ui.components.AetherTopBar
@@ -45,11 +45,11 @@ fun ProgressScreen(
     packagesVm: PackagesViewModel,
     navController: NavController,
 ) {
-    val isExecuting by packagesVm.isExecuting.collectAsState()
-    val execution by packagesVm.execution.collectAsState()
-    val completedLabels by packagesVm.completedLabels.collectAsState()
-    val lastResults by packagesVm.lastResults.collectAsState()
-    val executionError by packagesVm.executionError.collectAsState()
+    val isExecuting by packagesVm.isExecuting.collectAsStateWithLifecycle()
+    val execution by packagesVm.execution.collectAsStateWithLifecycle()
+    val completedLabels by packagesVm.completedLabels.collectAsStateWithLifecycle()
+    val lastResults by packagesVm.lastResults.collectAsStateWithLifecycle()
+    val executionError by packagesVm.executionError.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = { AetherTopBar(title = "Executing", navController = navController) },
@@ -106,6 +106,12 @@ fun ProgressScreen(
                             )
                         }
                         SectionTitle("Processed (${completedLabels.size})")
+                        OutlinedButton(
+                            onClick = packagesVm::cancelExecution,
+                            enabled = isExecuting,
+                        ) {
+                            Text("Cancel remaining operations")
+                        }
                         LazyColumn(
                             modifier = Modifier.fillMaxSize(),
                             verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -115,7 +121,7 @@ fun ProgressScreen(
                                     Icon(
                                         Icons.Filled.CheckCircle,
                                         contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.tertiary,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                     Text(
                                         label,

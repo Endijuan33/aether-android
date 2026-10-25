@@ -20,10 +20,10 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import id.mybase.aether.adb.AdbConnectionState
 import id.mybase.aether.domain.OperationStatus
@@ -45,11 +45,13 @@ fun RecoveryScreen(
     connectionVm: ConnectionViewModel,
     navController: NavController,
 ) {
-    val disabled by recoveryVm.disabledByAether.collectAsState()
-    val isWorking by recoveryVm.isWorking.collectAsState()
-    val result by recoveryVm.result.collectAsState()
-    val error by recoveryVm.error.collectAsState()
-    val connected by connectionVm.state.collectAsState()
+    val refreshing by recoveryVm.isRefreshing.collectAsStateWithLifecycle()
+    val warnings by recoveryVm.warnings.collectAsStateWithLifecycle()
+    val disabled by recoveryVm.disabledByAether.collectAsStateWithLifecycle()
+    val isWorking by recoveryVm.isWorking.collectAsStateWithLifecycle()
+    val result by recoveryVm.result.collectAsStateWithLifecycle()
+    val error by recoveryVm.error.collectAsStateWithLifecycle()
+    val connected by connectionVm.state.collectAsStateWithLifecycle()
     val isConnected = connected is AdbConnectionState.Connected
 
     LaunchedEffect(Unit) { recoveryVm.refresh() }
@@ -68,7 +70,7 @@ fun RecoveryScreen(
             InfoCard(
                 title = "What the operations mean",
                 body =
-                    "Uninstall for user: removes the app for the current user, including its data. " +
+                    "Uninstall for user: removes the app for device owner user 0, including its data. " +
                         "The system image keeps a copy for system apps.\n\n" +
                         "Disable: switches the app off without removing it. Nothing is deleted.\n\n" +
                         "Enable: switches a disabled app back on.",
@@ -77,14 +79,18 @@ fun RecoveryScreen(
                 title = "How to restore",
                 body =
                     "• Disabled apps can be re-enabled below, or manually with: " +
-                        "adb shell pm enable <package>\n" +
-                        "• Apps uninstalled for the user can come back with: " +
-                        "adb shell cmd package install-existing <package>\n" +
-                        "• Full restoration of a removed app always needs its original APK file — " +
-                        "AETHER does not keep backups of APKs.",
+                        "adb shell pm enable --user 0 <package>\n" +
+                        "• For a system app whose factory APK remains, install-existing --user 0 may restore availability. OEM policy can deny it.\n" +
+                        "• Reinstallation does not recover deleted data. Other removed apps need their original APK or a trusted installer. AETHER provides no uninstall rollback or APK/data backup.",
             )
 
             Section(title = "Disabled by AETHER (${disabled.size})") {
+                if (refreshing) Text("Refreshing recovery inventory…")
+                if (warnings.isNotEmpty())
+                    Text(
+                        "Partial inventory: ${warnings.size} packages could not be read.",
+                        color = MaterialTheme.colorScheme.error,
+                    )
                 if (disabled.isEmpty()) {
                     Text(
                         "No disabled-by-AETHER apps on record.",

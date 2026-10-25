@@ -10,7 +10,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -44,7 +44,7 @@ fun AetherTopBar(
         title = { Text(title) },
         navigationIcon = {
             IconButton(onClick = { navController.popBackStack() }) {
-                Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
             }
         },
         actions = actions,
@@ -66,9 +66,9 @@ fun SectionTitle(text: String, modifier: Modifier = Modifier) {
 @Composable
 fun EmptyState(
     message: String,
+    modifier: Modifier = Modifier,
     actionLabel: String? = null,
     onAction: (() -> Unit)? = null,
-    modifier: Modifier = Modifier,
 ) {
     Column(
         modifier = modifier.fillMaxWidth().padding(32.dp),
@@ -187,11 +187,11 @@ fun Section(
 fun ActionRow(
     primaryLabel: String,
     onPrimary: () -> Unit,
+    modifier: Modifier = Modifier,
     primaryEnabled: Boolean = true,
     secondaryLabel: String? = null,
     onSecondary: (() -> Unit)? = null,
     secondaryEnabled: Boolean = true,
-    modifier: Modifier = Modifier,
 ) {
     Row(
         modifier = modifier.fillMaxWidth(),

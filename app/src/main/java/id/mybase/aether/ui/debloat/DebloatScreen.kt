@@ -19,7 +19,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -29,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import id.mybase.aether.domain.OperationType
 import id.mybase.aether.domain.isReversible
@@ -57,9 +57,9 @@ fun DebloatScreen(
     packagesVm: PackagesViewModel,
     navController: NavController,
 ) {
-    val uiState by packagesVm.uiState.collectAsState()
-    val apps by packagesVm.visibleApps.collectAsState()
-    var operation by rememberSaveable { mutableStateOf(OperationType.UNINSTALL_FOR_USER) }
+    val uiState by packagesVm.uiState.collectAsStateWithLifecycle()
+    val apps by packagesVm.visibleApps.collectAsStateWithLifecycle()
+    var operation by rememberSaveable { mutableStateOf(OperationType.DISABLE) }
 
     Scaffold(
         topBar = { AetherTopBar(title = "Debloat", navController = navController) },
@@ -115,7 +115,11 @@ fun DebloatScreen(
                 TextButton(
                     onClick = {
                         apps.forEach { app ->
-                            if (app.packageName !in uiState.selection) {
+                            if (
+                                packagesVm.ratingFor(app) !=
+                                    id.mybase.aether.domain.SafetyRating.ESSENTIAL &&
+                                    app.packageName !in uiState.selection
+                            ) {
                                 packagesVm.toggleSelect(app.packageName)
                             }
                         }
@@ -127,6 +131,13 @@ fun DebloatScreen(
             }
             Spacer(Modifier.height(4.dp))
 
+            if (uiState.warnings.isNotEmpty()) {
+                Text(
+                    "Partial inventory: ${uiState.warnings.size} packages could not be read.",
+                    color = MaterialTheme.colorScheme.error,
+                )
+                TextButton(onClick = packagesVm::loadApps) { Text("Rescan inventory") }
+            }
             when {
                 uiState.isLoading -> LoadingRow("Scanning installed apps…")
                 uiState.error != null ->
