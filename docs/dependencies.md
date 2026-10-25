@@ -78,3 +78,19 @@ version kept as a trailing comment in each workflow):
 - Runtime dependencies are Apache-2.0. Test-only JUnit uses EPL-1.0, BouncyCastle uses MIT and org.json uses the JSON License. Android native/third-party notices are included under `app/src/main/assets/licenses`; upstream native licenses must be retained when preparing distribution.
 
 Notification pairing uses AndroidX NotificationCompat/RemoteInput already present in the locked runtime graph and platform NSD/foreground-service APIs. The redesign adds no runtime/test dependency and leaves dependency versions and verification metadata unchanged.
+
+### CI verification coverage (2026-10-26)
+
+CI exposed missing verification entries for the Linux AAPT2 JAR/POM
+(`9.4.1-15978811`), Guava parent POM (`33.4.0-jre`), JUnit BOM module
+(`5.11.0-M2`) and Kotlin Gradle plugins BOM module/POM (`2.2.10`). These are
+artifacts of the existing build graph, not dependency upgrades. Their SHA-256
+entries were added without changing the locked versions or verification policy.
+
+The AAPT2 artifacts were downloaded from `https://dl.google.com/dl/android/maven2`
+and compared with Google's SHA-256 sidecars. The BOM/parent metadata came from
+`https://repo.maven.apache.org/maven2`; its available SHA-256 or SHA-1 sidecars
+were checked before calculating the recorded SHA-256 hashes. Repository sidecars
+establish consistency with the publisher's hosted files, not independent
+signature attestation. Local cache/build success alone does not establish that
+all metadata and platform tools needed by a GitHub runner have verification entries.
