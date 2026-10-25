@@ -75,24 +75,14 @@ class AdbKeyStoreTest {
     }
 
     @Test
-    fun `android keystore falls back to files on the JVM`() {
-        // No AndroidKeyStore provider exists off-device, so the constructor
-        // must take the documented file fallback under filesDir.
+    fun `android keystore fails closed without writing exportable identity files`() {
         val dir = tempDir()
         try {
             val ks = AndroidAdbKeyStore(FakeContext(dir))
-            val first = ks.getOrCreateKeyPair()
-            val second = ks.getOrCreateKeyPair()
-            assertArrayEquals(first.public.encoded, second.public.encoded)
-            assertTrue(dir.walkTopDown().any { it.isFile })
-            // Certificate is served too.
-            val cert =
-                CertificateFactory.getInstance("X.509")
-                    .generateCertificate(ks.certificateDer().inputStream()) as X509Certificate
-            assertArrayEquals(
-                (first.public as RSAPublicKey).encoded,
-                (cert.publicKey as RSAPublicKey).encoded,
-            )
+            org.junit.Assert.assertThrows(java.security.KeyStoreException::class.java) {
+                ks.getOrCreateKeyPair()
+            }
+            assertTrue(dir.walkTopDown().none { it.isFile })
         } finally {
             dir.deleteRecursively()
         }

@@ -18,29 +18,29 @@ import javax.security.auth.x500.X500Principal
  * [AdbKeyMaterial] backed by the platform AndroidKeyStore.
  *
  * The RSA-2048 key is generated *inside* the keystore under [ALIAS] with a platform-minted
- * self-signed certificate, so the private key is non-exportable on devices with hardware-backed
- * keystore. On runtimes without the AndroidKeyStore provider (plain JVM, some test environments)
- * this degrades to [FileAdbKeyStore]; the backing is chosen once per instance so
- * [getOrCreateKeyPair] and [certificateDer] can never disagree.
+ * self-signed certificate. AndroidKeyStore private keys are non-exportable through the app API;
+ * hardware backing depends on the device. Provider failures are surfaced, with no file fallback.
  *
  * Key material is never logged.
  */
 class AndroidAdbKeyStore(appContext: Context) : AdbKeyMaterial {
     companion object {
-        const val ALIAS = "AETHER_ADB_PAIRING"
-        private const val DIR_NAME = "aether-adb"
+        // V1/V2 entries remain intact. Conscrypt delegates TLS RSA signatures via private-key
+        // Cipher.ENCRYPT_MODE; AndroidKeyStore converts that into SIGN with DIGEST_NONE.
+        // V3 authorizes that raw operation without adding encryption/decryption purposes.
+        // Existing key authorizations cannot be amended; system-mediated re-pairing is required.
+        const val ALIAS = "AETHER_ADB_PAIRING_V3"
     }
 
-    private val backing: AdbKeyMaterial =
-        try {
-            AndroidKeyStoreBacking().also { it.getOrCreateKeyPair() }
-        } catch (e: Exception) {
-            FileAdbKeyStore(File(appContext.filesDir, DIR_NAME))
-        }
+    private val backing: AdbKeyMaterial by lazy { AndroidKeyStoreBacking() }
 
-    override fun getOrCreateKeyPair(): KeyPair = backing.getOrCreateKeyPair()
+    @Synchronized override fun getOrCreateKeyPair(): KeyPair = backing.getOrCreateKeyPair()
 
-    override fun certificateDer(): ByteArray = backing.certificateDer()
+    @Synchronized
+    override fun certificateDer(): ByteArray {
+        getOrCreateKeyPair()
+        return backing.certificateDer()
+    }
 
     private class AndroidKeyStoreBacking : AdbKeyMaterial {
         override fun getOrCreateKeyPair(): KeyPair {
@@ -58,8 +58,19 @@ class AndroidAdbKeyStore(appContext: Context) : AdbKeyMaterial {
                         KeyProperties.PURPOSE_SIGN or KeyProperties.PURPOSE_VERIFY,
                     )
                     .setKeySize(2048)
-                    .setDigests(KeyProperties.DIGEST_SHA256)
-                    .setSignaturePaddings(KeyProperties.SIGNATURE_PADDING_RSA_PKCS1)
+                    .setDigests(
+                        KeyProperties.DIGEST_NONE,
+                        KeyProperties.DIGEST_SHA256,
+                        KeyProperties.DIGEST_SHA384,
+                        KeyProperties.DIGEST_SHA512,
+                    )
+                    .setSignaturePaddings(
+                        KeyProperties.SIGNATURE_PADDING_RSA_PKCS1,
+                        KeyProperties.SIGNATURE_PADDING_RSA_PSS,
+                    )
+                    // KeyMint padding authorizations are shared by signing/cipher operations.
+                    // BoringSSL encodes TLS RSA-PSS before delegating the raw RSA operation.
+                    .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
                     .setCertificateSubject(X500Principal("CN=AETHER ADB Pairing"))
                     .setCertificateSerialNumber(BigInteger(64, SecureRandom()))
                     .setCertificateNotBefore(notBefore)
@@ -91,13 +102,13 @@ class AndroidAdbKeyStore(appContext: Context) : AdbKeyMaterial {
 }
 
 /**
- * File-backed [AdbKeyMaterial] used when the AndroidKeyStore is unavailable.
+ * File-backed [AdbKeyMaterial] retained for isolated JVM test identities.
  *
  * SECURITY NOTE: the PKCS#8 private key is stored in the app-private directory
  * ([Context.getFilesDir], Linux UID-isolated, no world-readable bit), but unlike the
  * hardware-backed keystore it is extractable on rooted devices, from backups, or from a compromised
- * OS. This fallback exists for robustness; the AndroidKeyStore path is always preferred when
- * present. Key material is never logged.
+ * OS. Production never selects this fixture: AndroidKeyStore failures are surfaced instead of
+ * falling back to files. Key material is never logged.
  */
 internal class FileAdbKeyStore(private val directory: File) : AdbKeyMaterial {
     private val lock = Any()
