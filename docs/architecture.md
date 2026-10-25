@@ -20,9 +20,9 @@ id.mybase.aether/
 │   ├── PairingProtocol.kt     # pairing message framing (version/type/length)
 │   ├── PairingCrypto.kt       # SPAKE2 (BoringSSL SPAKE25519), HKDF, AES-128-GCM
 │   ├── Ed25519.kt             # Edwards25519 primitives used by SPAKE2
-│   ├── AdbKeyStores.kt        # AndroidAdbKeyStore (RSA-2048, alias AETHER_ADB_PAIRING)
-│   │                          #   + app-private file fallback
-│   ├── AdbPairingDiscovery.kt # discovery scaffolding (manual entry in 0.1.0)
+│   ├── AdbKeyStores.kt        # AndroidKeyStore RSA-2048/PSS, alias AETHER_ADB_PAIRING_V3
+│   ├── ConscryptPairingTransport.kt # public exporter (Conscrypt 2.8.0)
+│   ├── AdbPublicKey.kt / LocalAdbEndpoint.kt # AOSP encoding / local-only endpoint
 │   └── AdbDiagnostics.kt      # redactSecrets(): pairing codes/keys never reach logs
 ├── packages/                  # inventory, classification, operations
 │   ├── PackageRepository.kt   # contract for package inventory
@@ -50,12 +50,11 @@ id.mybase.aether/
 
 ## Layer responsibilities
 
-- **UI** — Compose screens + ViewModels; observes `StateFlow`s, never touches
-  sockets or the database directly.
+- **UI** — Compose screens + ViewModels; collects state with lifecycle ownership. The document-picker callback writes explicit user exports on IO; sockets and database access remain behind repositories.
 - **Domain** — pure data models and the risk matrix (`riskOf()`); no Android
   dependencies, fully unit-tested.
 - **Data (packages)** — `PackageManager` inventory, asset catalogue parsing,
-  JSON export.
+  JSON export. PackageInventory retains partial scan warnings rather than concealing unreadable packages.
 - **ADB transport/pairing** — protocol framing, TLS, SPAKE2, session
   management; exposes only the small `AdbPairingClient` / `AdbShell`
   interfaces to the rest of the app.
@@ -74,15 +73,12 @@ Pairing and shell are separate interfaces with separate lifecycles:
    NetworkError`. Pairing is a one-time trust establishment; the device
    then authorizes this client's RSA-2048 public key.
 2. `AdbShell.connect(host, adbPort, timeoutMs=15s)` — classic ADB
-   CNXN/OPEN/WRTE/CLSE session tunnelled over TLS to the device's ADB
+   CNXN/STLS negotiation followed by TLS and CNXN/OPEN/WRTE/CLSE to the device's ADB
    (connection) port.
-3. `AdbShell.exec(vararg args)` — the **only** shell entry point. The first
-   argument must be in `{pm, cmd}` (allowlisted in `AdbConnectionManager`);
-   package ids are validated by `InputValidators` before dispatch.
+3. `AdbShell.exec(vararg args)` — the **only** shell entry point. The complete argument list must match the fixed grammar in `AdbConnectionManager`: `id -u`, package-list queries, or uninstall/disable/enable for user 0. No arbitrary shell or `cmd` subcommands are accepted.
 
 The pairing port and the ADB connection port are different endpoints
-(typically both ephemeral, shown in system settings). They are stored and
-entered separately.
+(typically both ephemeral, shown in system settings). The normal notification flow discovers them independently; manual entry remains an advanced troubleshooting fallback.
 
 Protocol details and the library decision (hand-rolled, no third-party ADB
 dependency) live in [adb-pairing-protocol.md](adb-pairing-protocol.md).
@@ -97,10 +93,10 @@ Explicit sealed interfaces, no loose booleans:
   NetworkError(message)`
 - `SafetyRating`: `SAFE | RISKY | UNKNOWN | ESSENTIAL`
 - `AppKind`: `USER | SYSTEM | DISABLED | UPDATED_SYSTEM`
-- `OperationStatus`: `SUCCESS | FAILED | SKIPPED`
+- `OperationStatus`: `IN_PROGRESS | SUCCESS | FAILED | SKIPPED` (persisted IN_PROGRESS is shown as UNVERIFIED)
 - `RiskLevel`: `LOW | MEDIUM | HIGH | CRITICAL` via `riskOf()` (evaluation
   order is significant: ESSENTIAL ⇒ CRITICAL; system uninstall / RISKY ⇒
-  HIGH; unknown-system / plain user uninstall ⇒ MEDIUM; else LOW).
+  HIGH; any unknown package / plain user uninstall ⇒ MEDIUM; else LOW).
 
 `AdbConnectionManager` owns connect/disconnect/reconnect and cancels
 in-flight jobs on disconnect, so no sockets, coroutines or service
@@ -123,14 +119,14 @@ lazy process-scoped singletons.
   op. Chosen over Room for 0.1.0 because the schema is one table and the
   query surface is append + list; Room becomes worth it only when queries
   grow.
-- **AndroidKeyStore** (alias `AETHER_ADB_PAIRING`) — the RSA-2048 pairing
-  identity; app-private file fallback where AndroidKeyStore is unavailable.
+- **AndroidKeyStore** (alias `AETHER_ADB_PAIRING_V3`) — the RSA-2048 pairing
+  identity; provider failures are surfaced. V1/V2 entries are preserved. V3 requires system-mediated re-pairing because existing authorizations cannot be amended. It retains RSA-PSS/PKCS#1 and SHA-256/384/512, and authorizes DIGEST_NONE/raw padding for Conscrypt's TLS RSA signing delegate. AndroidKeyStore maps private-key Cipher.ENCRYPT_MODE to SIGN; key purposes remain SIGN/VERIFY, with no ENCRYPT/DECRYPT and no extractable private-key fallback.
   Note the [SECURITY.md](../SECURITY.md) caveat: local encryption is not
   extraction-proof on a compromised device.
 
 ## Test architecture
 
-152 `@Test` functions under `app/src/test`:
+Automated tests (actual counts/results are recorded in the engineering audit):
 
 - Pure-JVM unit tests for domain, validators, catalogue, export, executor,
   preferences-shaped logic, crypto (against BoringSSL oracle vectors).
@@ -139,6 +135,19 @@ lazy process-scoped singletons.
   over loopback sockets, not a real adbd.
 - Turbine-based `StateFlow` tests for ViewModels.
 
-Not covered: real-device pairing/`pm` execution (no device in CI), Compose
-UI tests (written but not yet executed). See
+Not covered: real-device pairing/`pm` execution (no device in CI), Compose/UI and platform persistence/keystore tests (compiled, device execution pending). See
 [limitations.md](limitations.md).
+
+## Mutation safety and interruption
+
+The shared executor mutex serializes entire plans. Each mutation requires owner-user inventory, a validated package ID, non-essential target, shell UID 2000 and installed-for-user-0 state. Before sending a mutation it commits an IN_PROGRESS history row. Expected command output and a second package query are both required for SUCCESS. Partial failures continue; cancellation stops subsequent work and records uncertainty. Clearing completed history preserves unresolved IN_PROGRESS rows.
+
+Uninstall has no rollback feature. Disable/enable toggle availability only; they do not undo application side effects or restore deleted data. Process death disconnects ADB and leaves durable unverified records, never an automatic replay of mutations. A short foreground service owns notification pairing/discovery for up to 150 seconds. It stops at a terminal state; the shell remains process-scoped. There is no persistent foreground shell service or Shizuku API/Binder server.
+
+## Notification pairing controller
+
+`adb/pairing/WirelessPairingController` owns a strongly typed phase/snapshot, legal transition checks, single-session guard and single-use generation tokens. `AetherAdbPairingService` starts from a visible user action, meets the foreground deadline, uses shortService on API 34+, publishes native RemoteInput notifications and returns START_NOT_STICKY. Replies enter the explicit non-exported service directly; no notification-listener permission or trampoline receiver is used. Codes are never saved or redelivered.
+
+`NsdAdbServiceDiscovery` owns per-collection Android NSD/network listeners. API 34+ uses ServiceInfoCallback updates; API 30–33 serializes legacy resolves. DiscoveryLease rejects late/out-of-order updates. Service loss or Wi-Fi loss invalidates endpoints. Search, pairing, fresh connection discovery, authenticated transport and `id -u` verification occur sequentially. The dashboard and ConnectionViewModel show Connected only after UID 2000 verification. The package executor still rechecks UID and package state independently before mutations.
+
+Pairing permission requests are owned by the NavHost so navigation does not discard their callbacks. Notification permission/channel failure offers in-app discovered code entry. SDK 37 local-network denial is a separate blocking permission with Android settings guidance. Manual pairing/connection live under Advanced manual setup. All new components reuse the original key/crypto/transport and add no runtime dependency.

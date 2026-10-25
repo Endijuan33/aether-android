@@ -5,19 +5,17 @@ proven on hardware.
 
 ## Hardware validation: pending
 
-The highest-impact limitation. CI has **no physical Android device**, so
-the following are implemented and unit-tested (including socket-based
-protocol fakes and BoringSSL oracle-vector verification) but **not yet
-validated against a real `adbd`**:
+CI has **no physical Android device**. A user-supplied POCO F6 / Android 16 / HyperOS OS3.0 trace now verifies native notification reply, NSD, TLS/SPAKE2 pairing, authenticated transport and actual shell UID 2000 after the V3 identity correction (see the incident report). This is a single manual run; broad device/instrumentation validation remains pending.
 
-- The full TLS + SPAKE2 pairing handshake (TLS exporter via BouncyCastle's public
-  RFC 5705 API; BC↔BoringSSL interop unverified on-device — pairing fails closed
-  if it mismatches, no fake success is possible).
-- The RSA public-key encoding inside the 8192-byte peer-info struct
-  (we send X.509 SPKI DER; AOSP's exact expectation is unverified).
-- The classic ADB session over the TLS tunnel.
-- `pm uninstall --user 0`, `pm disable-user`, `pm enable` behavior across
-  OEM skins and Android versions.
+Implemented/unit-tested components (socket fixtures and BoringSSL vectors are separate from the successful POCO run):
+
+- Full TLS 1.3 + SPAKE2 pairing, using standalone Conscrypt’s public exporter.
+- AndroidKeyStore RSA-PSS identity use by the actual TLS provider.
+- CNXN/STLS/TLS/CNXN transport negotiation, shell execution and reconnection.
+- All three `pm` mutations with explicit `--user 0`, across Android/OEM versions.
+- Compose flows, document-provider export and SQLite/keystore platform tests; their APK is compiled, but execution requires supported device-test infrastructure.
+
+The peer-info RSA encoding is now checked against AOSP’s Android public-key structure, not assumed to be SPKI DER. This resolves the source incompatibility but does not constitute hardware validation.
 
 A green CI build proves compilation and test passage, not on-device
 behavior.
@@ -34,11 +32,11 @@ behavior.
 
 ## Discovery
 
-**Manual IP/port entry only.** Wireless debugging does not advertise a
-documented, stable mDNS service for the pairing endpoint that can be
-relied upon; the pairing port is ephemeral and shown in system settings
-alongside the 6-digit code. `NsdManager` discovery was deliberately not
-implemented to avoid depending on unverified advertisement behavior.
+Android NSD discovers `_adb-tls-pairing._tcp.` and `_adb-tls-connect._tcp.` separately. Native notification input is the primary workflow; in-app discovery and advanced manual setup are compatibility fallbacks. User-supplied POCO F6 / Android 16 / HyperOS traces now confirm actual pairing-service resolution and native RemoteInput delivery. The subsequent V3 trace verifies actual pairing, authenticated connection and shell UID 2000 on this device. Other OEMs and lifecycle scenarios remain unvalidated. Android 13+ requires notification permission; SDK 37 devices require runtime local-network access. Disabled notification channels, OEM background restrictions and blocked mDNS can prevent notification pairing.
+
+The user reported pairing discovery stuck on POCO F6 / HyperOS. Submission gating, swallowed resolution failures and the missing per-discovery timeout were repaired; code input is independent of endpoint discovery. The new on-device trace progressed through resolution and reply handling, then localized rejection to TLS_HANDSHAKE before SPAKE2. Source inspection exposed V2's incompatible raw RSA signing authorizations. The V3 identity adds DIGEST_NONE/raw padding for Conscrypt's platform-supported signing delegate, keeping the old keys and SIGN/VERIFY-only/non-exportable storage. A subsequent user-supplied V3 trace now verifies successful pairing/transport and shell UID 2000 on the POCO; independent instrumentation and broader scenarios remain pending. The host reports model 24069PC21G, Android 16/API 36, OS3.0; no authorized ADB test target is connected. See the [incident follow-up](notification-pairing-redesign.md#poco-f6--hyperos-discovery-failure-follow-up).
+
+Pairing uses a short foreground service and a 150-second session deadline. It stops after verified connection, failure or cancellation. The shell then remains process-scoped; there is no indefinite foreground shell service and no restart/replay after process death. Keep AETHER open for package operations. Reconnect explicitly discovers a fresh endpoint using the retained keystore identity. RemoteInput does not expose a portable numeric-keyboard setting; exactly six ASCII digits are validated at submission. JVM strings and SystemUI-owned input cannot be securely zeroed; AETHER clears its mutable buffer and removes the received Intent payload without persisting the code.
 
 ## Privileges: no root, by design
 
@@ -48,8 +46,8 @@ implemented to avoid depending on unverified advertisement behavior.
   i.e. the `shell` user — the same privilege level as `adb shell` from a
   paired workstation.
 - What `pm` can do at that level: `uninstall --user 0` (removes the app
-  for the current user; system partition untouched), `disable-user`,
-  `enable`, `clear`. What it cannot do: touch `/system` partitions,
+  for device owner user 0; system partition untouched), `disable-user`,
+  `enable`. The app does not expose `clear` or arbitrary shell commands. What it cannot do: touch `/system` partitions,
   remove preinstalled APKs permanently, or grant itself new capabilities.
 
 ## Operations and recovery
@@ -64,9 +62,7 @@ implemented to avoid depending on unverified advertisement behavior.
 
 ## Release signing
 
-Signing secrets (`AETHER_KEYSTORE_*`) are not configured, so tag builds
-currently produce **unsigned** release APKs; the release workflow says so
-in its summary rather than pretending otherwise.
+Local release builds are unsigned because no local release signing configuration is present. The remote workflow signs only when all four secrets exist; remote secret availability has not been verified. A signed release and signing-certificate review remain required.
 
 ## Catalogue
 
@@ -74,3 +70,11 @@ in its summary rather than pretending otherwise.
 Packages without an entry are shown as **unknown**, never auto-classified.
 The catalogue is a starting reference, not an authority — see
 [catalogue-provenance.md](catalogue-provenance.md).
+
+## Production gates and local threat boundary
+
+The custom BigInteger SPAKE2 implementation is not constant-time; deterministic vectors do not replace cryptographic review. TLS accepts self-signed adbd certificates. Pairing’s code/exporter binds that exchange, while reconnection relies on the user-selected local endpoint and Android’s client-key authorization. A compromised local process/OS can impersonate a listener or abuse an authorized identity; UID and command-output checks cannot authenticate such a malicious peer. No unrelated remote-device shell is accepted.
+
+No foreground/background service maintains ADB after process death. Interrupted mutations are never replayed automatically; unverified durable history is retained. Uninstall is not rolled back here; enable/disable do not restore deleted data or application side effects. Multi-user mutations support user 0 only.
+
+This ARM64/PRoot environment has no emulator and the SDK adb binary exits 132, so device tests cannot execute here. Play distribution still needs signing, QUERY_ALL_PACKAGES policy review, SDK eligibility, accessibility/device validation and privacy/release review. AETHER is not declared production-ready or Play Store-ready.

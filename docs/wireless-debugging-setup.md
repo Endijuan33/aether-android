@@ -1,73 +1,31 @@
-# Wireless debugging setup
+# Wireless Debugging: notification Pair & Connect
 
-AETHER pairs with the device over Android's official Wireless debugging
-flow (Android 11+, API 30+). Pairing is system-mediated: Android shows the
-code, you type it into AETHER. There is no silent activation and no way to
-bypass the system dialogs — that is by design.
+Android 11+ is required. AETHER manages this Android device; it does not connect to another phone or silently enable debugging.
 
-## Prerequisites
+1. Open AETHER and tap **PAIR & CONNECT**. Allow notification permission on Android 13+ and local-network permission on Android 17/SDK 37.
+2. Tap **Open Developer options**. If hidden, use Android Settings → About phone → Build number seven times.
+3. Enable **Wireless debugging** and open **Pair device with pairing code**. Keep that system dialog open.
+4. Expand **AETHER — Pairing Service Found** in the notification shade. Tap **PAIR**, enter the six-digit code in **Wi-Fi pairing code**, and submit.
+5. AETHER performs the existing TLS/SPAKE2 pairing protocol, discovers the separate ADB connection service, establishes transport, and verifies `id -u` returns exactly `2000`. Only then does the dashboard show **Connected — shell verified**.
 
-- Android 11 or newer (minSdk 30). See [limitations.md](limitations.md).
-- AETHER and the target device on the same Wi-Fi network (pairing with the
-  device you are holding = same device, loopback/LAN).
+Pairing and connection are separate verified states. Pairing success alone does not enable management. If connection fails, keep Wireless debugging enabled and use **Reconnect with existing pairing identity**; no code is needed unless Android revoked the identity.
 
-## Steps
+## Notification and discovery recovery
 
-### 1. Enable Developer options
+- Permission denied or pairing channel blocked: open **notification settings** or **app permissions** from the guide. Alternatively, tap **Start in-app discovery fallback** and enter the discovered code while keeping the system dialog open (split screen may help).
+- Local-network permission denied on SDK 37: allow it in Android app permissions. In-app/manual setup cannot bypass Android network protection.
+- Service not found: open the system pairing-code dialog, check Wi-Fi and foreground/background access. AETHER stops discovery after a bounded session; retry explicitly.
+- The native inline keyboard is controlled by SystemUI/OEM. AETHER strictly accepts exactly six ASCII digits, including leading zeroes, and rejects spaces, letters or extra digits.
+- Code rejected/expired: use the current code; duplicate and stale replies are ignored.
+- Notification dismissed/service stopped: reopen AETHER and start a new session. Codes are never redelivered after process recreation.
+- OEM notification shade missing inline reply: use the in-app fallback. No notification-listener permission or third-party app is required.
 
-1. Open **Settings → About phone**.
-2. Tap **Build number** seven times until "You are now a developer" appears.
+## Advanced manual setup
 
-### 2. Turn on Wireless debugging
+Under **Settings → Advanced manual pairing & connection**, enter the device’s current local IP, pairing port and code. Then use the separate connection port displayed in Wireless debugging. Saved ports are hints and may be stale; automatic flow always discovers a fresh endpoint. Cancel any active notification session before using manual setup.
 
-1. Open **Settings → System → Developer options**.
-2. Enable **Wireless debugging**.
+## Revocation and lifecycle
 
-### 3. Pair the device
+Android **Wireless debugging → Paired devices** owns key revocation. AETHER retains its AndroidKeyStore identity; it never stores the code. The short pairing foreground service stops after success/failure/cancellation. Shell access lasts only while AETHER’s process/session remains alive. Process death disconnects ADB; restart and explicitly reconnect. Package mutations are never replayed.
 
-1. In **Developer options → Wireless debugging**, tap **Pair device with
-   pairing code**.
-2. Android shows a dialog with a **6-digit pairing code**, an **IP address**,
-   and a **pairing port** (e.g. `192.168.1.5:37123`).
-
-### 4. Enter the code in AETHER
-
-1. Open AETHER → **Connect** (or follow the onboarding guide).
-2. Enter the **IP address**, the **pairing port**, and the **6-digit code**
-   shown by the system dialog. You can paste the code; non-digits are
-   filtered automatically.
-3. Tap **Pair**. AETHER performs the TLS + SPAKE2 handshake
-   (`adb pair` equivalent) and the device authorizes this app's key.
-   Pairing succeeds once; the authorization persists until you revoke it
-   in system settings (**Wireless debugging → paired devices**).
-
-### 5. Connect
-
-1. In system settings, **Wireless debugging** also shows the separate
-   **ADB connection port** (different from the pairing port).
-2. Enter it in AETHER and tap **Connect**. The dashboard shows the
-   connection state, endpoint details and diagnostics.
-
-## Pairing port vs connection port
-
-They are **not the same**:
-
-| Endpoint | Purpose | When used |
-|---|---|---|
-| Pairing port (e.g. `:37123`) | One-time trust establishment (TLS + SPAKE2) | Only during pairing |
-| ADB connection port (e.g. `:45679`) | The actual ADB session | Every connect |
-
-Both are ephemeral — the system may assign new ones. If pairing starts
-failing with a previously working port, check system settings for the
-current values.
-
-## Revoking access
-
-**Settings → System → Developer options → Wireless debugging → Paired
-devices** — remove the entry for this app's key. AETHER cannot unpair
-itself from the device side; revocation is a system operation.
-
-## Troubleshooting
-
-See [troubleshooting.md](troubleshooting.md) for pairing failures,
-connection refused, timeouts, auth failures and network changes.
+Hardware validation still pending. The implementation and automated fixtures do not prove device/OEM interoperability. See [notification-pairing-redesign.md](notification-pairing-redesign.md) and [limitations.md](limitations.md).

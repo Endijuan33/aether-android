@@ -56,11 +56,7 @@ byte-for-byte against its deterministic oracle vectors.
 `passwordMaterial = pairing_code_bytes || TLS_exporter("adb-label\0", 64 bytes)`.
 
 The 6-digit code alone is **not** the SPAKE2 password. The TLS exporter binds the
-pairing to the specific TLS connection, preventing MITM forwarding. The export uses
-BouncyCastle's public `TlsContext.exportKeyingMaterial` (RFC 5705); the platform
-Conscrypt exporter (`com.android.org.conscrypt.Conscrypt.exportKeyingMaterial`) is a
-hidden API blocked for apps targeting recent SDKs (verified failing on-device
-2026-10-24), so it is not used.
+pairing to the specific TLS connection, preventing MITM forwarding. Production uses standalone Conscrypt 2.8.0 via its public `Conscrypt.exportKeyingMaterial`; framework hidden APIs are not used. BouncyCastle is confined to JVM test fixtures.
 Verified against BoringSSL oracle: `passwordHex=353135313039` is ASCII `"515109"`.
 
 ### Peer-info key
@@ -83,10 +79,13 @@ Types: `0`=SPAKE2, `1`=PEER_INFO. Max payload 64 KiB.
 
 ## Discovery
 
-**Manual entry only in 0.1.0.** Wireless debugging does not advertise a documented,
-stable mDNS service for the pairing endpoint that can be relied upon; the pairing
-port is ephemeral and shown in system settings alongside the 6-digit code. NsdManager
-discovery is not implemented to avoid depending on unverified advertisement behavior.
+AOSP advertises `_adb-tls-pairing._tcp` and `_adb-tls-connect._tcp`. AETHER now uses Android NSD to discover them in separate, cancellable sessions. Pairing replies bind to a live service generation; lost services invalidate obsolete resolutions and submissions. Only loopback/local-interface addresses are accepted. The connection endpoint is discovered afresh after protocol pairing success. Manual entry remains an advanced fallback. See [notification-pairing-redesign.md](notification-pairing-redesign.md).
+
+## AOSP public key and transport
+
+The client PeerInfo data contains base64 of AOSP's 524-byte Android RSA public-key structure, then a space/comment/NUL. It is not SPKI DER. The little-endian fields are 64 words, `n0inv`, 256-byte modulus, 256-byte Montgomery R² and exponent 65537. See AOSP [android_pubkey.cpp](https://android.googlesource.com/platform/system/core/+/refs/heads/main/libcrypto_utils/android_pubkey.cpp) and [client/auth.cpp](https://android.googlesource.com/platform/packages/modules/adb/+/refs/heads/main/client/auth.cpp).
+
+Connection begins with plaintext CNXN, receives STLS version 0x01000000, acknowledges STLS, performs TLS 1.3 with the same persistent client identity, then receives CNXN over TLS. See AOSP [adb.cpp](https://android.googlesource.com/platform/packages/modules/adb/+/refs/heads/main/adb.cpp). CNXN and OPEN string payloads are NUL-terminated. Shell output is bounded to 4 MiB; buffering applies backpressure before acknowledging WRTE. Individual cancellation closes the stream; I/O failure closes the transport and updates connection state.
 
 ## Library decision
 
@@ -99,16 +98,8 @@ discovery is not implemented to avoid depending on unverified advertisement beha
 
 See `gradle/aether-adb-deps.txt`.
 
-## PENDING hardware validation
+## Pending device and cryptographic validation
 
-The SPAKE2 construction, key schedule, framing, and peer-info struct are verified
-against BoringSSL's oracle vectors and AOSP sources. What remains:
+SPAKE2 has deterministic BoringSSL-vector coverage. RSA fields and connection ordering were cross-checked against primary sources and loopback fixtures. These checks do not prove interoperability with Android adbd. A user-supplied POCO F6 / Android 16 / HyperOS trace now verifies the real TLS/exporter/SPAKE2 exchange, authenticated ADB transport and shell UID 2000. V3 adds the DIGEST_NONE/raw RSA padding required by Conscrypt's AndroidKeyStore signing delegate while retaining SIGN/VERIFY-only non-exportable keys; V1/V2 are preserved. Repeated/lifecycle runs, other Android/OEMs and owner-user package operations still need device validation. See the notification-pairing incident report for the source contract and trace provenance. The BigInteger-based custom curve implementation is not constant-time and needs an independent cryptographic review before production approval. No compatible third-party ADB client has been adopted in this hardening pass; the existing implementation was repaired rather than replaced.
 
-1. **Live device pairing** — the full handshake has not been exercised against a real
-   adbd (no device in this environment). The TLS exporter now uses BouncyCastle's
-   public RFC 5705 API (the platform Conscrypt hidden-API reflection was verified
-   failing on-device 2026-10-24 and removed); BC↔BoringSSL exporter interop is the
-   remaining risk, fails closed (no fake success).
-2. **Peer-info RSA public-key encoding** — AOSP's exact expected encoding inside the
-   8191-byte data field is unverified; we send X.509 SPKI DER (the standard form).
-3. **mDNS discovery** — deliberately not implemented (see above).
+Hardware validation still pending for the broader device/lifecycle/package-operation matrix; one successful POCO F6 run is recorded.
