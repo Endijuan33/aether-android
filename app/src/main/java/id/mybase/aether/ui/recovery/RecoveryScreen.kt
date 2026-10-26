@@ -109,6 +109,10 @@ fun RecoveryScreen(
                                     modifier = Modifier.fillMaxWidth().padding(12.dp),
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                 ) {
+                                    id.mybase.aether.ui.components.PackageIcon(
+                                        record.packageName,
+                                        Modifier.padding(end = 12.dp),
+                                    )
                                     Column(Modifier.weight(1f)) {
                                         Text(
                                             record.label.ifBlank { record.packageName },

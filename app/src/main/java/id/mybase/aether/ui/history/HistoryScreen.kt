@@ -113,6 +113,10 @@ fun HistoryScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
+                                id.mybase.aether.ui.components.PackageIcon(
+                                    record.packageName,
+                                    Modifier.padding(end = 12.dp),
+                                )
                                 Text(
                                     record.label.ifBlank { record.packageName },
                                     style = MaterialTheme.typography.titleSmall,

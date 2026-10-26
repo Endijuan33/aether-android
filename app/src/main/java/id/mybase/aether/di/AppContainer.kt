@@ -52,6 +52,7 @@ class AppContainer(context: Context) {
     }
 
     private val appContext: Context = context.applicationContext
+    val icons by lazy { id.mybase.aether.packages.PackageIconProvider(appContext) }
     private val keys by lazy { AndroidAdbKeyStore(appContext) }
 
     val prefs: AetherPreferences by lazy {

@@ -265,6 +265,7 @@ fun AppRow(
         modifier = modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        id.mybase.aether.ui.components.PackageIcon(app.packageName, Modifier.padding(end = 12.dp))
         Column(Modifier.weight(1f)) {
             Text(app.label.ifBlank { app.packageName }, style = MaterialTheme.typography.bodyLarge)
             Text(

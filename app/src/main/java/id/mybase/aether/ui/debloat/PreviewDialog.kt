@@ -180,6 +180,7 @@ fun PreviewDialog(
 private fun PreviewItemCard(item: PreviewItem, type: OperationType) {
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp)) {
+            id.mybase.aether.ui.components.PackageIcon(item.app.packageName)
             Text(
                 item.app.label.ifBlank { item.app.packageName },
                 style = MaterialTheme.typography.titleSmall,

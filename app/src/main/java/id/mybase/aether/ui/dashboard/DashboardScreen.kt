@@ -178,6 +178,10 @@ fun DashboardScreen(
                                         modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                     ) {
+                                        id.mybase.aether.ui.components.PackageIcon(
+                                            record.packageName,
+                                            Modifier.padding(end = 12.dp),
+                                        )
                                         Column(Modifier.weight(1f)) {
                                             Text(
                                                 record.label,

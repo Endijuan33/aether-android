@@ -100,6 +100,7 @@ fun AppDetailsScreen(
         ) {
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) {
+                    id.mybase.aether.ui.components.PackageIcon(app.packageName)
                     Text(
                         app.label.ifBlank { app.packageName },
                         style = MaterialTheme.typography.headlineSmall,
