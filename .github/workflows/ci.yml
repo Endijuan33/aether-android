@@ -157,7 +157,13 @@ jobs:
           target: google_apis
           arch: x86_64
           disable-animations: true
-          script: ./gradlew connectedDebugAndroidTest --console=plain
+          script: |
+            # This disposable AVD must expose Developer Settings for the navigation regression.
+            # Android 15 closes that activity immediately when Developer Options is disabled.
+            adb shell settings get global development_settings_enabled
+            adb shell settings put global development_settings_enabled 1
+            test "$(adb shell settings get global development_settings_enabled | tr -d '\r')" = 1
+            ./gradlew connectedDebugAndroidTest --console=plain --stacktrace
       - name: Upload device test reports
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
