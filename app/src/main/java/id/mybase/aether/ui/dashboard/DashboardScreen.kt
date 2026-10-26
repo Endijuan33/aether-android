@@ -88,6 +88,14 @@ fun DashboardScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             item { WirelessConnectionCard(state = state) }
+            item {
+                OutlinedButton(
+                    onClick = { navController.navigate(Routes.DEVICE_RECOMMENDATIONS) },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Device information and recommendations")
+                }
+            }
 
             item {
                 Card(Modifier.fillMaxWidth()) {

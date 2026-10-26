@@ -17,6 +17,7 @@ object Routes {
     const val APPS = "apps"
     const val APP_DETAILS = "app_details/{packageName}"
     const val DEBLOAT = "debloat"
+    const val DEVICE_RECOMMENDATIONS = "device_recommendations"
     const val PROGRESS = "progress"
     const val HISTORY = "history"
     const val RECOVERY = "recovery"

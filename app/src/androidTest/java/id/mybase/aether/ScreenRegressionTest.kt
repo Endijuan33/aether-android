@@ -176,4 +176,54 @@ class ScreenRegressionTest {
         compose.onNodeWithText("Nothing to preview. Select at least one app first.").assertExists()
         compose.onNodeWithText("Confirm").assertIsNotEnabled()
     }
+
+    @Test
+    fun recommendationsNeverSelectAutomaticallyAndUseSharedSelection() {
+        val vm = vm()
+        compose.runOnUiThread { vm.loadApps() }
+        compose.setContent {
+            AetherTheme {
+                id.mybase.aether.ui.apps.DeviceRecommendationsScreen(
+                    vm,
+                    rememberNavController(),
+                    {},
+                )
+            }
+        }
+        compose.onNodeWithText("Preview (0)").assertIsNotEnabled()
+        compose.onNodeWithContentDescription("Select Alpha").performScrollTo().performClick()
+        compose.onNodeWithText("Preview (1)").assertIsEnabled()
+        compose.runOnUiThread { vm.setQuery("beta") }
+        compose.onNodeWithContentDescription("Select Alpha").assertDoesNotExist()
+        compose.onNodeWithText("Preview (1)").assertIsEnabled()
+        org.junit.Assert.assertEquals(setOf("com.example.alpha"), vm.uiState.value.selection)
+    }
+
+    @Test
+    fun deviceInformationShowsLimitationsWithoutFingerprint() {
+        val profile =
+            id.mybase.aether.device.DeviceProfileDetector.detect(
+                id.mybase.aether.device.DeviceBuild(
+                    manufacturer = "Xiaomi",
+                    brand = "POCO",
+                    model = "POCO F6",
+                    sdk = 36,
+                    fingerprint = "private-build-fingerprint",
+                ),
+            )
+        compose.setContent {
+            AetherTheme {
+                androidx.compose.foundation.layout.Column {
+                    id.mybase.aether.ui.apps.DeviceInformation(profile)
+                }
+            }
+        }
+        compose.onNodeWithText("android-baseline").assertExists()
+        compose
+            .onNodeWithText(
+                "OEM version unavailable; version-specific recommendations are withheld.",
+            )
+            .assertExists()
+        compose.onNodeWithText("private-build-fingerprint").assertDoesNotExist()
+    }
 }

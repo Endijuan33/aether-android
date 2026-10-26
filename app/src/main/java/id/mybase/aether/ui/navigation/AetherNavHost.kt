@@ -13,6 +13,7 @@ import id.mybase.aether.di.AppContainer
 import id.mybase.aether.ui.about.AboutScreen
 import id.mybase.aether.ui.apps.AppDetailsScreen
 import id.mybase.aether.ui.apps.AppListScreen
+import id.mybase.aether.ui.apps.DeviceRecommendationsScreen
 import id.mybase.aether.ui.connection.ConnectionViewModel
 import id.mybase.aether.ui.dashboard.DashboardScreen
 import id.mybase.aether.ui.debloat.DebloatScreen
@@ -135,6 +136,13 @@ fun AetherNavHost(
         }
         composable(Routes.DEBLOAT) {
             DebloatScreen(packagesVm = packagesVm, navController = navController)
+        }
+        composable(Routes.DEVICE_RECOMMENDATIONS) {
+            DeviceRecommendationsScreen(
+                packagesVm,
+                navController,
+                container.deviceCatalogue::refresh,
+            )
         }
         composable(Routes.PROGRESS) {
             ProgressScreen(packagesVm = packagesVm, navController = navController)

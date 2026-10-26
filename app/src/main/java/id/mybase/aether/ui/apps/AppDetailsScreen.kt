@@ -71,6 +71,7 @@ fun AppDetailsScreen(
     val scope = rememberCoroutineScope()
 
     val app = uiState.apps.find { it.packageName == packageName }
+    val deviceCatalogue by packagesVm.deviceCatalogue.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = { AetherTopBar(title = "App details", navController = navController) },
@@ -98,6 +99,7 @@ fun AppDetailsScreen(
                     .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            RecommendationDetails(deviceCatalogue.entries[packageName])
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) {
                     id.mybase.aether.ui.components.PackageIcon(app.packageName)
