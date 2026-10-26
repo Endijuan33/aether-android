@@ -53,13 +53,15 @@ fun AetherNavHost(
             container.wirelessPairing,
         )
     }
-    val packagesVm: PackagesViewModel = activityViewModel {
+    val packagesVm: PackagesViewModel = activitySavedStateViewModel { savedState ->
         PackagesViewModel(
             container.packageRepository,
             container.catalogue,
             container.executor,
             container.shell,
             container.history,
+            savedState = savedState,
+            deviceCatalogue = container.deviceCatalogue.state,
         )
     }
     val historyVm: HistoryViewModel = activityViewModel {

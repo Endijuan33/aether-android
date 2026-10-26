@@ -199,6 +199,8 @@ class PackagesViewModelTest {
 
     @Test
     fun `selection toggles and clears`() {
+        repo.apps = apps
+        vm.loadApps()
         vm.toggleSelect("com.alpha")
         assertTrue("com.alpha" in vm.uiState.value.selection)
 
@@ -214,6 +216,15 @@ class PackagesViewModelTest {
     }
 
     @Test
+    fun `individual selection cannot bypass catalogue protection`() {
+        repo.apps = apps
+        vm.loadApps()
+        vm.toggleSelect("com.essential")
+        assertFalse("com.essential" in vm.uiState.value.selection)
+        assertTrue(vm.preview(OperationType.DISABLE).isEmpty())
+    }
+
+    @Test
     fun `preview maps rating risk and reversibility`() {
         repo.apps = apps
         vm.loadApps()
@@ -223,7 +234,7 @@ class PackagesViewModelTest {
         vm.toggleSelect("com.essential") // SYSTEM, ESSENTIAL rating
 
         val items = vm.preview(OperationType.DISABLE)
-        assertEquals(2, items.size)
+        assertEquals(1, items.size)
         val byPackage = items.associateBy { it.app.packageName }
 
         val alpha = byPackage.getValue("com.alpha")
@@ -234,12 +245,86 @@ class PackagesViewModelTest {
         )
         assertEquals(OperationType.DISABLE.isReversible(), alpha.reversible)
 
-        val essential = byPackage.getValue("com.essential")
+        vm.prepareSinglePreview("com.essential", OperationType.DISABLE)
+        val essential = vm.previewItems.value.single()
         assertEquals(SafetyRating.ESSENTIAL, essential.rating)
         assertEquals(
             riskOf(OperationType.DISABLE, SafetyRating.ESSENTIAL, AppKind.SYSTEM),
             essential.risk,
         )
+    }
+
+    @Test
+    fun `bulk selection can be unchecked repeatedly without toggling back on`() {
+        repo.apps = apps
+        vm.loadApps()
+        vm.selectAllVisible()
+        assertEquals(setOf("com.alpha", "com.beta", "com.gamma"), vm.uiState.value.selection)
+        vm.setSelected("com.alpha", false)
+        vm.setSelected("com.alpha", false)
+        assertEquals(setOf("com.beta", "com.gamma"), vm.uiState.value.selection)
+        vm.setSelected("com.alpha", true)
+        vm.setSelected("com.alpha", true)
+        assertEquals(3, vm.preview(OperationType.DISABLE).size)
+    }
+
+    @Test
+    fun `hidden selections survive filtering sorting and visible deselection`() {
+        repo.apps = apps
+        vm.loadApps()
+        vm.selectAllVisible()
+        vm.setQuery("alpha")
+        assertEquals(SelectionSummary(3, 1, 0, 2), vm.selectionSummary(vm.visibleApps.value))
+        vm.deselectAllVisible()
+        assertEquals(setOf("com.beta", "com.gamma"), vm.uiState.value.selection)
+        vm.setQuery("")
+        vm.setKindFilter(AppKind.DISABLED)
+        vm.setSortBy(AppSort.KIND)
+        assertEquals(setOf("com.beta", "com.gamma"), vm.uiState.value.selection)
+        vm.setOperation(OperationType.UNINSTALL_FOR_USER)
+        vm.setSelected("com.gamma", false)
+        assertEquals(setOf("com.beta"), vm.uiState.value.selection)
+    }
+
+    @Test
+    fun `protection and missing inventory cannot be bypassed by bulk or individual selection`() {
+        repo.apps = apps + testApp("id.mybase.aether.debug")
+        vm.loadApps()
+        vm.setSelected("com.missing", true)
+        vm.setSelected("id.mybase.aether.debug", true)
+        vm.setSelected("com.essential", true)
+        assertTrue(vm.uiState.value.selection.isEmpty())
+        vm.selectAllVisible()
+        assertEquals(SelectionSummary(3, 3, 2, 0), vm.selectionSummary(vm.visibleApps.value))
+        vm.deselectAllVisible()
+        assertTrue(vm.uiState.value.selection.isEmpty())
+    }
+
+    @Test
+    fun `restored selections are reconciled against fresh inventory without execution`() {
+        val handle =
+            androidx.lifecycle.SavedStateHandle(
+                mapOf(
+                    "selectedPackages" to listOf("com.alpha", "com.essential", "com.missing"),
+                    "operation" to OperationType.UNINSTALL_FOR_USER.name,
+                ),
+            )
+        val restored =
+            PackagesViewModel(
+                repo,
+                catalogue,
+                executor,
+                shell,
+                history,
+                mainDispatcherRule.dispatcher,
+                handle,
+            )
+        repo.apps = apps
+        restored.loadApps()
+        assertEquals(setOf("com.alpha"), restored.uiState.value.selection)
+        assertEquals(OperationType.UNINSTALL_FOR_USER, restored.uiState.value.operation)
+        assertEquals(listOf("com.alpha"), handle.get<List<String>>("selectedPackages"))
+        assertNull(restored.execution.value)
     }
 
     @Test

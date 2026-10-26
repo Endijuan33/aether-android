@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
@@ -20,13 +19,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
@@ -34,10 +29,10 @@ import id.mybase.aether.domain.OperationType
 import id.mybase.aether.domain.isReversible
 import id.mybase.aether.domain.label
 import id.mybase.aether.ui.apps.AppRow
+import id.mybase.aether.ui.apps.AppRowSelection
 import id.mybase.aether.ui.components.AetherTopBar
 import id.mybase.aether.ui.components.EmptyState
 import id.mybase.aether.ui.components.LoadingRow
-import id.mybase.aether.ui.components.SafetyDot
 import id.mybase.aether.ui.components.SectionTitle
 import id.mybase.aether.ui.navigation.Routes
 import id.mybase.aether.ui.packages.PackagesViewModel
@@ -59,7 +54,8 @@ fun DebloatScreen(
 ) {
     val uiState by packagesVm.uiState.collectAsStateWithLifecycle()
     val apps by packagesVm.visibleApps.collectAsStateWithLifecycle()
-    var operation by rememberSaveable { mutableStateOf(OperationType.DISABLE) }
+    val operation = uiState.operation
+    val summary = packagesVm.selectionSummary(apps)
 
     Scaffold(
         topBar = { AetherTopBar(title = "Debloat", navController = navController) },
@@ -69,10 +65,10 @@ fun DebloatScreen(
                     packagesVm.preparePreview(operation)
                     navController.navigate(Routes.PREVIEW_DIALOG)
                 },
-                enabled = uiState.selection.isNotEmpty(),
+                enabled = summary.selected > 0,
                 modifier = Modifier.fillMaxWidth().padding(16.dp),
             ) {
-                Text("Preview (${uiState.selection.size})")
+                Text("Preview (${summary.selected})")
             }
         },
     ) { padding ->
@@ -80,18 +76,19 @@ fun DebloatScreen(
             modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp),
         ) {
             Spacer(Modifier.height(8.dp))
+            id.mybase.aether.ui.apps.PackageFilters(packagesVm)
             SectionTitle("Operation")
             OPERATIONS.forEach { type ->
                 Row(
                     modifier =
                         Modifier.fillMaxWidth()
-                            .clickable { operation = type }
+                            .clickable { packagesVm.setOperation(type) }
                             .padding(vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     RadioButton(
                         selected = operation == type,
-                        onClick = { operation = type },
+                        onClick = { packagesVm.setOperation(type) },
                     )
                     Column(Modifier.padding(start = 8.dp)) {
                         Text(type.label(), style = MaterialTheme.typography.bodyLarge)
@@ -111,24 +108,24 @@ fun DebloatScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                SectionTitle("Apps (${apps.size})")
                 TextButton(
-                    onClick = {
-                        apps.forEach { app ->
-                            if (
-                                packagesVm.ratingFor(app) !=
-                                    id.mybase.aether.domain.SafetyRating.ESSENTIAL &&
-                                    app.packageName !in uiState.selection
-                            ) {
-                                packagesVm.toggleSelect(app.packageName)
-                            }
-                        }
-                    },
-                    enabled = apps.isNotEmpty(),
+                    onClick = packagesVm::selectAllVisible,
+                    enabled = summary.eligibleVisible > 0,
                 ) {
                     Text("Select all visible")
                 }
+                TextButton(
+                    onClick = packagesVm::deselectAllVisible,
+                    enabled = summary.selected > summary.hiddenSelected,
+                ) {
+                    Text("Deselect all visible")
+                }
             }
+            Text(
+                "Selected ${summary.selected} · Eligible visible ${summary.eligibleVisible} · " +
+                    "Protected ${summary.protectedVisible} · Hidden selected ${summary.hiddenSelected}",
+                style = MaterialTheme.typography.bodySmall,
+            )
             Spacer(Modifier.height(4.dp))
 
             if (uiState.warnings.isNotEmpty()) {
@@ -152,6 +149,7 @@ fun DebloatScreen(
                         actionLabel = "Scan now",
                         onAction = packagesVm::loadApps,
                     )
+                apps.isEmpty() -> EmptyState(message = "No apps match the current search / filter.")
                 else ->
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
@@ -162,19 +160,18 @@ fun DebloatScreen(
                             AppRow(
                                 app = app,
                                 onClick = { packagesVm.toggleSelect(app.packageName) },
-                                ratingDot = { SafetyDot(packagesVm.ratingFor(app)) },
-                                trailing = {
-                                    Checkbox(
-                                        checked = checked,
-                                        onCheckedChange = {
-                                            packagesVm.toggleSelect(app.packageName)
-                                        },
-                                        modifier =
-                                            Modifier.semantics {
-                                                contentDescription = "Select ${app.label}"
-                                            },
+                                ratingDot = {
+                                    id.mybase.aether.ui.apps.PackageSafetyLabel(
+                                        packagesVm,
+                                        app.packageName,
                                     )
                                 },
+                                selection =
+                                    AppRowSelection(
+                                        checked,
+                                        { packagesVm.setSelected(app.packageName, it) },
+                                        packagesVm.protectionReason(app),
+                                    ),
                             )
                         }
                     }

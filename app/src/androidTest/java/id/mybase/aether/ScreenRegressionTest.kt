@@ -3,6 +3,7 @@ package id.mybase.aether
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.unit.dp
 import androidx.navigation.compose.rememberNavController
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import id.mybase.aether.adb.AdbConnectionState
@@ -11,6 +12,7 @@ import id.mybase.aether.domain.*
 import id.mybase.aether.packages.*
 import id.mybase.aether.persistence.InMemoryOperationHistoryStore
 import id.mybase.aether.ui.apps.AppListScreen
+import id.mybase.aether.ui.debloat.DebloatScreen
 import id.mybase.aether.ui.debloat.PreviewDialog
 import id.mybase.aether.ui.packages.PackagesViewModel
 import id.mybase.aether.ui.theme.AetherTheme
@@ -135,6 +137,37 @@ class ScreenRegressionTest {
         compose.onNodeWithText("Scan failed: Inventory unavailable").assertExists()
         compose.onNodeWithText("Retry").assertExists().performClick()
         compose.onNodeWithText("Scan failed: Inventory unavailable").assertExists()
+    }
+
+    @Test
+    fun checkboxAreaUnchecksAfterSelectAllAndSurvivesRecomposition() {
+        val vm = vm()
+        compose.runOnUiThread { vm.loadApps() }
+        compose.setContent { AetherTheme { DebloatScreen(vm, rememberNavController()) } }
+        compose.onNodeWithText("Select all visible").performClick()
+        compose.onNodeWithText("Preview (2)").assertIsEnabled()
+        val alpha = compose.onNodeWithContentDescription("Select Alpha")
+        alpha.assertIsOn().performTouchInput {
+            click(androidx.compose.ui.geometry.Offset(width - 24.dp.toPx(), center.y))
+        }
+        alpha.assertIsOff()
+        compose.onNodeWithText("Preview (1)").assertIsEnabled()
+        compose.runOnUiThread { vm.setQuery("beta") }
+        compose.onNodeWithContentDescription("Select Beta").assertIsOn()
+        compose.runOnUiThread { vm.setQuery("") }
+        alpha.assertIsOff().performClick().assertIsOn()
+        compose.onNodeWithText("Deselect all visible").performClick()
+        compose.onNodeWithText("Preview (0)").assertIsNotEnabled()
+    }
+
+    @Test
+    fun essentialRowsCannotBeSelectedByBulkOrCheckbox() {
+        val vm = vm(SafetyRating.ESSENTIAL)
+        compose.runOnUiThread { vm.loadApps() }
+        compose.setContent { AetherTheme { DebloatScreen(vm, rememberNavController()) } }
+        compose.onNodeWithText("Select all visible").assertIsNotEnabled()
+        compose.onNodeWithContentDescription("Select Alpha").assertIsNotEnabled().assertIsOff()
+        compose.onNodeWithText("Preview (0)").assertIsNotEnabled()
     }
 
     @Test

@@ -17,10 +17,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -37,6 +39,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
@@ -48,7 +53,6 @@ import id.mybase.aether.ui.components.AetherTopBar
 import id.mybase.aether.ui.components.EmptyState
 import id.mybase.aether.ui.components.KindBadge
 import id.mybase.aether.ui.components.LoadingRow
-import id.mybase.aether.ui.components.SafetyDot
 import id.mybase.aether.ui.navigation.Routes
 import id.mybase.aether.ui.packages.AppSort
 import id.mybase.aether.ui.packages.PackagesViewModel
@@ -153,6 +157,7 @@ fun AppListScreen(
                 onSelect = packagesVm::setKindFilter,
             )
             Spacer(Modifier.height(4.dp))
+            SafetyFilters(packagesVm)
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -216,7 +221,7 @@ fun AppListScreen(
                             AppRow(
                                 app = app,
                                 ratingDot = {
-                                    SafetyDot(packagesVm.ratingFor(app))
+                                    PackageSafetyLabel(packagesVm, app.packageName)
                                 },
                                 onClick = {
                                     navController.navigate(Routes.appDetails(app.packageName))
@@ -260,9 +265,20 @@ fun AppRow(
     modifier: Modifier = Modifier,
     ratingDot: @Composable () -> Unit = {},
     trailing: @Composable RowScope.() -> Unit = {},
+    selection: AppRowSelection? = null,
 ) {
+    val interaction =
+        if (selection == null) Modifier.clickable(onClick = onClick)
+        else
+            Modifier.toggleable(
+                    value = selection.checked,
+                    enabled = selection.reason == null,
+                    role = Role.Checkbox,
+                    onValueChange = selection.onCheckedChange,
+                )
+                .semantics { contentDescription = "Select ${app.label}" }
     Row(
-        modifier = modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 10.dp),
+        modifier = modifier.fillMaxWidth().then(interaction).padding(vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         id.mybase.aether.ui.components.PackageIcon(app.packageName, Modifier.padding(end = 12.dp))
@@ -281,7 +297,27 @@ fun AppRow(
                 KindBadge(app.kind())
                 ratingDot()
             }
+            selection?.reason?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
-        trailing()
+        if (selection == null) trailing()
+        else
+            Checkbox(
+                checked = selection.checked,
+                onCheckedChange = null,
+                enabled = selection.reason == null,
+            )
     }
 }
+
+/** The row owns selection input; its checkbox is a passive visual indicator. */
+data class AppRowSelection(
+    val checked: Boolean,
+    val onCheckedChange: (Boolean) -> Unit,
+    val reason: String? = null,
+)

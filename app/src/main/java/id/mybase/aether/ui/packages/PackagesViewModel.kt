@@ -1,5 +1,6 @@
 package id.mybase.aether.ui.packages
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import id.mybase.aether.adb.AdbConnectionState
@@ -14,8 +15,11 @@ import id.mybase.aether.domain.SafetyRating
 import id.mybase.aether.domain.isReversible
 import id.mybase.aether.domain.kind
 import id.mybase.aether.domain.riskOf
+import id.mybase.aether.packages.DeviceAwareSafetyCatalogue
+import id.mybase.aether.packages.DeviceCatalogueState
 import id.mybase.aether.packages.PackageOperationExecutor
 import id.mybase.aether.packages.PackageRepository
+import id.mybase.aether.packages.RecommendationSafety
 import id.mybase.aether.packages.SafetyCatalogue
 import id.mybase.aether.persistence.OperationHistoryStore
 import kotlinx.coroutines.CancellationException
@@ -26,6 +30,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -48,6 +53,15 @@ data class PackagesUiState(
     val kindFilter: AppKind? = null,
     val sortBy: AppSort = AppSort.NAME,
     val selection: Set<String> = emptySet(),
+    val operation: OperationType = OperationType.DISABLE,
+    val safetyFilter: RecommendationSafety? = null,
+)
+
+data class SelectionSummary(
+    val selected: Int,
+    val eligibleVisible: Int,
+    val protectedVisible: Int,
+    val hiddenSelected: Int,
 )
 
 /** One row of the pre-execution preview, with its assessed risk. */
@@ -72,15 +86,26 @@ class PackagesViewModel(
     private val shell: AdbShell,
     private val history: OperationHistoryStore,
     private val filterDispatcher: CoroutineDispatcher = Dispatchers.Default,
+    private val savedState: SavedStateHandle? = null,
+    val deviceCatalogue: StateFlow<DeviceCatalogueState> = MutableStateFlow(DeviceCatalogueState()),
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(PackagesUiState())
+    private val _uiState =
+        MutableStateFlow(
+            PackagesUiState(
+                selection = savedState?.get<List<String>>("selectedPackages")?.toSet().orEmpty(),
+                operation =
+                    OperationType.entries.firstOrNull {
+                        it.name == savedState?.get<String>("operation") &&
+                            it != OperationType.ENABLE
+                    } ?: OperationType.DISABLE,
+            ),
+        )
     val uiState: StateFlow<PackagesUiState> = _uiState.asStateFlow()
 
     /** Apps after search / kind filter / sort are applied. */
     val visibleApps: StateFlow<List<AppPackage>> =
-        uiState
-            .map { applyView(it) }
+        combine(uiState, deviceCatalogue) { state, _ -> applyView(state) }
             .flowOn(filterDispatcher)
             .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
@@ -116,6 +141,41 @@ class PackagesViewModel(
     val previewType: StateFlow<OperationType?> = _previewType.asStateFlow()
     private var executionJob: Job? = null
 
+    init {
+        viewModelScope.launch {
+            deviceCatalogue.collect {
+                _uiState.update { state ->
+                    state.copy(
+                        selection =
+                            state.selection -
+                                state.apps
+                                    .filter { protectionReason(it) != null }
+                                    .map { it.packageName }
+                                    .toSet(),
+                    )
+                }
+                saveSelection()
+                val type = _previewType.value
+                if (type != null && !_isExecuting.value)
+                    _previewItems.value = _previewItems.value.map { toPreviewItem(it.app, type) }
+            }
+        }
+    }
+
+    fun setSafetyFilter(filter: RecommendationSafety?) = _uiState.update {
+        it.copy(safetyFilter = filter)
+    }
+
+    fun recommendationFor(packageName: String) = deviceCatalogue.value.entries[packageName]
+
+    fun classificationFor(packageName: String): RecommendationSafety =
+        recommendationFor(packageName)?.classification
+            ?: when (catalogue.ratingFor(packageName)) {
+                SafetyRating.ESSENTIAL -> RecommendationSafety.CRITICAL
+                SafetyRating.RISKY -> RecommendationSafety.CAUTION
+                else -> RecommendationSafety.UNKNOWN
+            }
+
     fun loadApps() {
         if (_uiState.value.isLoading) return
         _uiState.update { it.copy(isLoading = true, error = null) }
@@ -130,9 +190,15 @@ class PackagesViewModel(
                         isLoading = false,
                         error = null,
                         selection =
-                            it.selection.intersect(apps.map { app -> app.packageName }.toSet()),
+                            it.selection.intersect(
+                                apps
+                                    .filter { app -> protectionReason(app) == null }
+                                    .map { app -> app.packageName }
+                                    .toSet(),
+                            ),
                     )
                 }
+                saveSelection()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -150,21 +216,94 @@ class PackagesViewModel(
     fun setSortBy(sort: AppSort) = _uiState.update { it.copy(sortBy = sort) }
 
     fun toggleSelect(packageName: String) {
-        _uiState.update { s ->
-            val sel = s.selection.toMutableSet()
-            if (!sel.add(packageName)) sel.remove(packageName)
-            s.copy(selection = sel)
-        }
+        setSelected(packageName, packageName !in _uiState.value.selection)
     }
 
-    fun clearSelection() = _uiState.update { it.copy(selection = emptySet()) }
+    fun setSelected(packageName: String, checked: Boolean) {
+        _uiState.update { state ->
+            val app = state.apps.find { it.packageName == packageName }
+            val next =
+                if (checked && app != null && protectionReason(app) == null) {
+                    state.selection + packageName
+                } else {
+                    state.selection - packageName
+                }
+            state.copy(selection = next)
+        }
+        saveSelection()
+    }
+
+    fun selectAllVisible() {
+        _uiState.update { state ->
+            state.copy(
+                selection =
+                    state.selection +
+                        applyView(state)
+                            .filter { protectionReason(it) == null }
+                            .map { it.packageName },
+            )
+        }
+        saveSelection()
+    }
+
+    fun deselectAllVisible() {
+        _uiState.update { state ->
+            state.copy(
+                selection = state.selection - applyView(state).map { it.packageName }.toSet(),
+            )
+        }
+        saveSelection()
+    }
+
+    fun clearSelection() {
+        _uiState.update { it.copy(selection = emptySet()) }
+        saveSelection()
+    }
+
+    fun setOperation(type: OperationType) {
+        if (type == OperationType.ENABLE) return
+        _uiState.update { it.copy(operation = type) }
+        savedState?.set("operation", type.name)
+    }
+
+    fun protectionReason(app: AppPackage): String? =
+        when {
+            app.packageName in setOf("id.mybase.aether", "id.mybase.aether.debug") ->
+                "Protected: AETHER manages this session."
+            catalogue.ratingFor(app.packageName) == SafetyRating.ESSENTIAL ->
+                "Protected: essential system functionality."
+            else -> null
+        }
+
+    fun selectionSummary(visible: List<AppPackage>): SelectionSummary {
+        val state = _uiState.value
+        val selected =
+            state.apps
+                .filter {
+                    it.packageName in state.selection && protectionReason(it) == null
+                }
+                .map { it.packageName }
+                .toSet()
+        val visibleIds = visible.map { it.packageName }.toSet()
+        val protected = visible.count { protectionReason(it) != null }
+        return SelectionSummary(
+            selected.size,
+            visible.size - protected,
+            protected,
+            (selected - visibleIds).size,
+        )
+    }
+
+    private fun saveSelection() {
+        savedState?.set("selectedPackages", _uiState.value.selection.toList())
+    }
 
     fun ratingFor(app: AppPackage): SafetyRating = catalogue.ratingFor(app.packageName)
 
     /** Builds preview items for the current multi-selection. Pure read of state. */
     fun preview(type: OperationType): List<PreviewItem> =
         _uiState.value.apps
-            .filter { it.packageName in _uiState.value.selection }
+            .filter { it.packageName in _uiState.value.selection && protectionReason(it) == null }
             .map { toPreviewItem(it, type) }
 
     fun preparePreview(type: OperationType) {
@@ -204,7 +343,9 @@ class PackagesViewModel(
     }
 
     private fun toPreviewItem(app: AppPackage, type: OperationType): PreviewItem {
-        val rating = catalogue.ratingFor(app.packageName)
+        val rating =
+            (catalogue as? DeviceAwareSafetyCatalogue)?.ratingForOperation(app.packageName, type)
+                ?: catalogue.ratingFor(app.packageName)
         return PreviewItem(
             app = app,
             rating = rating,
@@ -259,6 +400,8 @@ class PackagesViewModel(
         val filtered =
             s.apps.filter { app ->
                 (s.kindFilter == null || app.kind() == s.kindFilter) &&
+                    (s.safetyFilter == null ||
+                        classificationFor(app.packageName) == s.safetyFilter) &&
                     (q.isEmpty() ||
                         app.label.lowercase().contains(q) ||
                         app.packageName.lowercase().contains(q))

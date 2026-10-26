@@ -4,8 +4,11 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.LocalActivity
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.createSavedStateHandle
+import androidx.lifecycle.viewmodel.CreationExtras
 import androidx.lifecycle.viewmodel.compose.viewModel
 
 /**
@@ -30,4 +33,20 @@ inline fun <reified VM : ViewModel> activityViewModel(
             }
         }
     return viewModel(viewModelStoreOwner = activity, key = key, factory = factory)
+}
+
+/** Activity-owned state restoration without replaying any operation or connection. */
+@Composable
+inline fun <reified VM : ViewModel> activitySavedStateViewModel(
+    crossinline creator: (SavedStateHandle) -> VM,
+): VM {
+    val activity = LocalActivity.current as ComponentActivity
+    val factory = remember {
+        object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T =
+                creator(extras.createSavedStateHandle()) as T
+        }
+    }
+    return viewModel(viewModelStoreOwner = activity, factory = factory)
 }
