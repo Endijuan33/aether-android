@@ -191,12 +191,26 @@ class ScreenRegressionTest {
             }
         }
         compose.onNodeWithText("Preview (0)").assertIsNotEnabled()
-        compose.onNodeWithContentDescription("Select Alpha").performScrollTo().performClick()
+        compose
+            .onNodeWithContentDescription("Select Alpha")
+            .performScrollTo()
+            .assertIsOff()
+            .performClick()
+            .assertIsOn()
         compose.onNodeWithText("Preview (1)").assertIsEnabled()
         compose.runOnUiThread { vm.setQuery("beta") }
         compose.onNodeWithContentDescription("Select Alpha").assertDoesNotExist()
         compose.onNodeWithText("Preview (1)").assertIsEnabled()
         org.junit.Assert.assertEquals(setOf("com.example.alpha"), vm.uiState.value.selection)
+        compose.runOnUiThread { vm.setQuery("") }
+        compose
+            .onNodeWithContentDescription("Select Alpha")
+            .performScrollTo()
+            .assertIsOn()
+            .performClick()
+            .assertIsOff()
+        compose.onNodeWithText("Preview (0)").assertIsNotEnabled()
+        org.junit.Assert.assertTrue(vm.uiState.value.selection.isEmpty())
     }
 
     @Test

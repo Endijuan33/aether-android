@@ -97,8 +97,9 @@ fun DeviceRecommendationsScreen(
     navController: NavController,
     retry: () -> Unit,
 ) {
-    val snapshot by vm.deviceCatalogue.collectAsStateWithLifecycle()
-    val state by vm.uiState.collectAsStateWithLifecycle()
+    // Read here so selection/catalogue changes also recompute the summary outside Scaffold.
+    val snapshot = vm.deviceCatalogue.collectAsStateWithLifecycle().value
+    val state = vm.uiState.collectAsStateWithLifecycle().value
     val apps by vm.visibleApps.collectAsStateWithLifecycle()
     var showDevice by rememberSaveable { mutableStateOf(false) }
     val summary = vm.selectionSummary(apps)
