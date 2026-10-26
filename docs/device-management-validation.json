@@ -1,0 +1,98 @@
+{
+  "jvm": {
+    "tests": 264,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "lint": {
+    "debug": {
+      "errors": 0,
+      "warnings": 6
+    },
+    "release": {
+      "errors": 0,
+      "warnings": 6
+    }
+  },
+  "artifacts": [
+    {
+      "path": "app/build/outputs/apk/debug/app-debug.apk",
+      "bytes": 77819871,
+      "sha256": "6119e846a918d3d332a920e715706dff8069b6cec93f023c7fde087a8bd766cf"
+    },
+    {
+      "path": "app/build/outputs/apk/release/app-release-unsigned.apk",
+      "bytes": 13929124,
+      "sha256": "d3ad077fa26ca96ef9910283b3fc5058a549658b6fe15f4eb87d65ccce3ac352"
+    },
+    {
+      "path": "app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk",
+      "bytes": 2738950,
+      "sha256": "20b2fdf064c7ef4d0f3a42813b323b4fb0823b070343d642794b1f4d516ed5cb"
+    }
+  ],
+  "instrumentation": {
+    "compiled": 38,
+    "executed": 0
+  },
+  "head": "1fe271fa0bdc3a122900e3fc403c5bab15687641",
+  "branch": "main",
+  "working_tree": "Uncommitted development changes",
+  "validation_date": "2026-10-26",
+  "hardware": "USER-VERIFIED ON PHYSICAL DEVICE: developer-reported manual testing on POCO F6 / Android 16 / HyperOS; confirmation recorded 2026-10-26",
+  "automated_hardware_observation": "No connected adb devices; instrumentation not executed",
+  "hardware_validation": {
+    "status": "USER-VERIFIED ON PHYSICAL DEVICE",
+    "confirmation_recorded_on": "2026-10-26",
+    "date_basis": "Developer confirmation received; separate test timestamp not supplied",
+    "evidence_source": "Developer-reported manual testing of the latest implementation",
+    "device": "POCO F6",
+    "android_version": "16",
+    "oem_software": "HyperOS",
+    "checks": [
+      {
+        "functionality": "Native application icons",
+        "status": "USER-VERIFIED ON PHYSICAL DEVICE"
+      },
+      {
+        "functionality": "Automatic device/OEM detection",
+        "status": "USER-VERIFIED ON PHYSICAL DEVICE"
+      },
+      {
+        "functionality": "Device-aware recommendations",
+        "status": "USER-VERIFIED ON PHYSICAL DEVICE"
+      },
+      {
+        "functionality": "Application safety filters",
+        "status": "USER-VERIFIED ON PHYSICAL DEVICE"
+      },
+      {
+        "functionality": "Individual checkbox selection and unselection",
+        "status": "USER-VERIFIED ON PHYSICAL DEVICE"
+      },
+      {
+        "functionality": "Select All and Deselect All",
+        "status": "USER-VERIFIED ON PHYSICAL DEVICE"
+      },
+      {
+        "functionality": "Protected-package selection safeguards",
+        "status": "USER-VERIFIED ON PHYSICAL DEVICE"
+      },
+      {
+        "functionality": "External native Developer Settings navigation",
+        "status": "USER-VERIFIED ON PHYSICAL DEVICE"
+      },
+      {
+        "functionality": "Return to AETHER without breaking its expected functionality",
+        "status": "USER-VERIFIED ON PHYSICAL DEVICE"
+      },
+      {
+        "functionality": "Existing Wireless ADB and package-management workflows",
+        "status": "USER-VERIFIED ON PHYSICAL DEVICE"
+      }
+    ],
+    "limitations": "No exact HyperOS build, raw profile values, named-package removal evidence or tested APK checksum supplied. No additional automated execution claimed."
+  },
+  "instrumentation_execution_status": "pending"
+}

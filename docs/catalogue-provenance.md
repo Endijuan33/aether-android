@@ -2,6 +2,11 @@
 
 File: `app/src/main/assets/catalogue.json`
 
+The historical catalogue below is preserved. The device-aware schema, evidence,
+conservative mapping and update policy are documented in
+[debloat-catalogue.md](debloat-catalogue.md). Generic SAFE labels in this historical
+asset do not constitute device-verified operation recommendations.
+
 ## Revision
 
 - **Revision:** `2026-10-24-r1`

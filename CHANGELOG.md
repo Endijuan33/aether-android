@@ -5,6 +5,10 @@ Format follows Keep a Changelog; versions follow SemVer.
 
 ## [Unreleased] — engineering hardening (2026-10-25)
 
+- Add device detection, native cached application icons and Device Recommendations with offline catalogue schema 1, revision `2026-10-26-r1`. The POCO F6 profile contains conservative source-backed references; no device-verified SAFE removals are claimed.
+- Unify controlled checkbox/row selection, protect individual selection, preserve selections through filters and saved state, and display visible/protected/hidden counts.
+- Resolve Developer Settings to an external native system activity with launch-failure fallback and a resume-refreshed state indicator.
+
 - Correct AOSP RSA peer-info encoding, CNXN/STLS/TLS negotiation and NUL-terminated destinations; persistent PSS-capable AndroidKeyStore identity requires re-pairing.
 - Restrict complete shell command grammar and endpoints to this device. Verify UID and resulting package state, protect essential packages and AETHER, serialize plans and preserve interrupted history.
 - Repair cancellation/socket cleanup, bounded output/backpressure, connection-loss reporting and activity recreation ownership.

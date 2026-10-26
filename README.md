@@ -65,7 +65,7 @@ otherwise the release is honestly reported as unsigned.
 | Operation history (SQLite) | Implemented | JVM history tests; platform SQLite test added, device execution pending |
 | Inventory export, preferences | Implemented | Serialization/preferences unit-tested; document-provider/device validation pending |
 | Debug APK via CI | Workflow configured | Baseline CI passed; hardening changes require a new remote run |
-| Release APK, signing | Workflow ready | Local artifact is unsigned; remote secret availability is unverified |
+| Release APK, signing | Production signing not configured | Release APK is unsigned; the 2026-10-27 audit confirmed all four repository signing secrets absent |
 | mDNS discovery + native notification input | Implemented | POCO F6 physical trace verifies actual pairing/connect NSD and native inline reply; other OEMs and instrumentation pending |
 
 Distinction that matters: a green CI build proves the code compiles and the
@@ -78,6 +78,7 @@ device. A successful POCO F6 run is recorded; broader hardware validation is tra
 - [docs/notification-pairing-redesign.md](docs/notification-pairing-redesign.md) — notification architecture, reference research, validation and migration
 
 - [docs/engineering-audit.md](docs/engineering-audit.md) — findings, fixes, validation evidence and residual risks
+- [docs/pre-checkpoint-validation-report.md](docs/pre-checkpoint-validation-report.md) — latest checkpoint audit, exact validation results, signing setup and artifact integrity
 - [docs/architecture.md](docs/architecture.md) — modules, layers, ADB design, state models, DI, persistence
 - [docs/adb-pairing-protocol.md](docs/adb-pairing-protocol.md) — pairing protocol research and library decision
 - [docs/wireless-debugging-setup.md](docs/wireless-debugging-setup.md) — user guide: enable Wireless debugging, pair, connect

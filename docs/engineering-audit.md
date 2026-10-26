@@ -408,3 +408,59 @@ M settings.gradle.kts
 ```
 
 
+
+
+## Device-aware management phase — 2026-10-26
+
+Baseline `1fe271fa0bdc3a122900e3fc403c5bab15687641` on `main`; initial tree clean.
+Development changes remain uncommitted. Earlier audit sections are preserved.
+The [new engineering report](device-management-report.md) records scope, exact
+root-cause evidence, limitations, all modified files, APK hashes and per-objective
+status. Architecture details are in [device detection](device-detection.md),
+[debloat catalogue](debloat-catalogue.md), and [package icons](package-icon-loading.md).
+
+The required codebase-memory skill was unavailable during initial inspection;
+the user authorized token-saver as the fallback. Kotlin skeletons, targeted reads
+and reference queries were used. When a reference query missed Kotlin usages,
+a narrow source search supplied the missing evidence. No subagents were used.
+
+Phases proceeded through baseline inspection, selection, icons, Settings,
+detection, catalogue, POCO references, UI integration and full regression.
+Each implementation phase received focused checks and diff inspection before
+continuing. The initially failing individual-protection regression established a
+real defect. Physical checkbox uncheck failure and an internal Settings route
+were not reproduced; the report distinguishes those limits from verified fixes.
+
+Baseline: 241 JVM tests, 0 failures, six lint warnings per variant.
+Final: 264 JVM tests, 0 failures/errors/skips; ktfmtCheck passed; debug/release lint
+0 errors and the same six warnings; debug and unsigned release APKs built;
+38 instrumentation tests compiled, none executed. Strict dependency verification
+passed. `adb devices -l` found no connected device. No new dependency, ADB engine,
+package executor or CI workflow changes were made. No package operation was run.
+
+Hardware validation still pending.
+
+
+## Developer-reported physical validation — 2026-10-26
+
+**USER-VERIFIED ON PHYSICAL DEVICE**: the developer confirms successful manual
+testing of the latest implementation on **POCO F6 / Android 16 / HyperOS**.
+The confirmation was recorded on 2026-10-26; no separate test timestamp was supplied.
+The ten confirmed checks are native icons, automatic device/OEM detection,
+device-aware recommendations, safety filters, individual selection/unselection,
+Select All/Deselect All, protected-package safeguards, external native Developer
+Settings, normal return to AETHER, and existing Wireless ADB/package-management
+workflows. See the [hardware validation record](device-management-report.md#hardware-validation--developer-reported-manual-testing).
+
+This supersedes the pending physical-validation status for those checks in the
+preceding implementation snapshot. Historical audit evidence is retained.
+These results are developer-reported manual testing, not Codex-observed or
+automated instrumentation execution. The 38 instrumentation tests remain compiled
+and unexecuted; execution is pending. The existing 264 passing JVM tests,
+0 lint errors and six existing warnings per variant, APK sizes/checksums and
+artifact metadata are preserved. No tests/builds were rerun for this update.
+No new package-specific SAFE classification is justified by this report.
+
+A new CI run for the uncommitted implementation and signed-release verification
+remain pending. Only documentation changed; no application, ADB or package logic
+was modified, and no commit or push was made.

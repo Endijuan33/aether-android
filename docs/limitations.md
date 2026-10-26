@@ -3,9 +3,22 @@
 Honest accounting of what 0.1.0 does not do, cannot do, or has not yet
 proven on hardware.
 
-## Hardware validation: pending
+## Hardware validation: POCO manual verification; instrumentation pending
 
 CI has **no physical Android device**. A user-supplied POCO F6 / Android 16 / HyperOS OS3.0 trace now verifies native notification reply, NSD, TLS/SPAKE2 pairing, authenticated transport and actual shell UID 2000 after the V3 identity correction (see the incident report). This is a single manual run; broad device/instrumentation validation remains pending.
+
+On **2026-10-26**, the developer confirmed that the latest native icons,
+automatic device/OEM detection, device-aware recommendations, safety filters,
+individual selection/unselection, Select All/Deselect All, protected-package
+safeguards, external native Developer Settings navigation, normal return to
+AETHER, and existing Wireless ADB/package-management workflows behave as expected
+on **POCO F6 / Android 16 / HyperOS**. These checks are
+**USER-VERIFIED ON PHYSICAL DEVICE**, based on developer-reported manual testing.
+This is the confirmation-record date; a separate test timestamp was not supplied.
+See the [hardware validation record](device-management-report.md#hardware-validation--developer-reported-manual-testing).
+The 38 instrumentation tests remain compiled, with 0 executed; automated execution
+and broader OEM coverage remain pending. Existing JVM/lint/artifact results and
+package-specific catalogue evidence are unchanged.
 
 Implemented/unit-tested components (socket fixtures and BoringSSL vectors are separate from the successful POCO run):
 
@@ -62,7 +75,21 @@ Pairing uses a short foreground service and a 150-second session deadline. It st
 
 ## Release signing
 
-Local release builds are unsigned because no local release signing configuration is present. The remote workflow signs only when all four secrets exist; remote secret availability has not been verified. A signed release and signing-certificate review remain required.
+Local release builds are deliberately unsigned; no release signing configuration
+or debug-signing fallback is present. The 2026-10-27 pre-checkpoint audit verified
+that the repository has zero Actions secrets, so all four required signing
+secrets are absent and production signing is **NOT CONFIGURED**. Debug/test APK
+signatures verify; unsigned release verification fails as expected. A signed
+production artifact and production certificate review remain required. See the
+[pre-checkpoint report](pre-checkpoint-validation-report.md) for the four secret
+names, secure setup procedure, separate artifact hashes and checkpoint limits.
+
+The isolated offline validation passed 264 JVM tests, formatting, both lint
+variants and debug/release/test assembly. Its lint reports contain zero errors
+and two trust-manager warnings per variant; the prior six-warning result remains
+historical evidence, with no warning claimed fixed. Current-implementation
+instrumentation execution and remote CI remain pending. A green CI run at the
+committed baseline does not cover these uncommitted implementation changes.
 
 ## Catalogue
 
@@ -77,4 +104,11 @@ The custom BigInteger SPAKE2 implementation is not constant-time; deterministic 
 
 No foreground/background service maintains ADB after process death. Interrupted mutations are never replayed automatically; unverified durable history is retained. Uninstall is not rolled back here; enable/disable do not restore deleted data or application side effects. Multi-user mutations support user 0 only.
 
-This ARM64/PRoot environment has no emulator and the SDK adb binary exits 132, so device tests cannot execute here. Play distribution still needs signing, QUERY_ALL_PACKAGES policy review, SDK eligibility, accessibility/device validation and privacy/release review. AETHER is not declared production-ready or Play Store-ready.
+The latest check on this ARM64 host ran the available `adb devices -l`
+successfully, but listed no connected devices. No local emulator binary or AVD is
+installed, so current device-test execution remains pending. An earlier attempt
+with the SDK-bundled adb exited 132; that is historical tool evidence, not the
+result of the latest available-adb check. Play distribution still needs signing,
+QUERY_ALL_PACKAGES policy review, SDK eligibility, accessibility/device validation
+and privacy/release review. AETHER is not declared production-ready or Play
+Store-ready.
