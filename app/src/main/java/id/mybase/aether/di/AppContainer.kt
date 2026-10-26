@@ -72,7 +72,14 @@ class AppContainer(context: Context) {
     }
 
     val catalogue: SafetyCatalogue by lazy {
-        PackagesModule.createCatalogue(appContext)
+        id.mybase.aether.packages.DeviceAwareSafetyCatalogue(
+            PackagesModule.createCatalogue(appContext),
+            deviceCatalogue.state,
+        )
+    }
+
+    val deviceCatalogue by lazy {
+        id.mybase.aether.packages.DeviceCatalogueRepository(appContext, applicationScope)
     }
 
     val history: OperationHistoryStore by lazy {

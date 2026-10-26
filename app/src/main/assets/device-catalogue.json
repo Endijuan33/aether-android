@@ -1,0 +1,300 @@
+{
+  "schemaVersion": 1,
+  "revision": "2026-10-26-r1",
+  "updated": "2026-10-26",
+  "rules": [
+    {
+      "id": "android-systemui",
+      "packageName": "com.android.systemui",
+      "displayName": "Android System UI",
+      "layer": "BASELINE",
+      "manufacturers": [],
+      "oemFamilies": [],
+      "models": [],
+      "codenames": [],
+      "profiles": [],
+      "minSdk": 30,
+      "maxSdk": 2147483647,
+      "oemVersions": [],
+      "classification": "CRITICAL",
+      "disable": {
+        "safety": "CRITICAL",
+        "recommended": false,
+        "reason": "Provides the status bar, notifications, lock screen and navigation. Keep enabled; losing the system interface can make the device unusable."
+      },
+      "uninstall": {
+        "safety": "CRITICAL",
+        "recommended": false,
+        "reason": "Provides the status bar, notifications, lock screen and navigation. Keep enabled; losing the system interface can make the device unusable. Uninstall may also delete application data."
+      },
+      "explanation": "Provides the status bar, notifications, lock screen and navigation. Keep enabled; losing the system interface can make the device unusable.",
+      "functionality": "Provides the status bar, notifications, lock screen and navigation. Keep enabled; losing the system interface can make the device unusable.",
+      "consequences": "Provides the status bar, notifications, lock screen and navigation. Keep enabled; losing the system interface can make the device unusable.",
+      "dependencies": [],
+      "evidence": [
+        {
+          "kind": "SOURCE_REVIEW",
+          "source": "https://android.googlesource.com/platform/frameworks/base/+/refs/tags/android-16.0.0_r1/packages/SystemUI/AndroidManifest.xml",
+          "limitation": "Source review establishes identity and potential risk, not a successful device operation or complete dependency map."
+        }
+      ],
+      "confidence": "MEDIUM",
+      "lastVerificationDate": null
+    },
+    {
+      "id": "xiaomi-com.miui.analytics",
+      "packageName": "com.miui.analytics",
+      "displayName": "Xiaomi Analytics",
+      "layer": "MANUFACTURER",
+      "manufacturers": [
+        "xiaomi"
+      ],
+      "oemFamilies": [],
+      "models": [],
+      "codenames": [],
+      "profiles": [],
+      "minSdk": 30,
+      "maxSdk": 2147483647,
+      "oemVersions": [],
+      "classification": "UNKNOWN",
+      "disable": {
+        "safety": "UNKNOWN",
+        "recommended": false,
+        "reason": "Research identifies Xiaomi analytics. The current firmware dependencies, opt-out behavior and consequences of disabling it have not been verified."
+      },
+      "uninstall": {
+        "safety": "UNKNOWN",
+        "recommended": false,
+        "reason": "Research identifies Xiaomi analytics. The current firmware dependencies, opt-out behavior and consequences of disabling it have not been verified. Uninstall may also delete application data."
+      },
+      "explanation": "Research identifies Xiaomi analytics. The current firmware dependencies, opt-out behavior and consequences of disabling it have not been verified.",
+      "functionality": "Research identifies Xiaomi analytics. The current firmware dependencies, opt-out behavior and consequences of disabling it have not been verified.",
+      "consequences": "Research identifies Xiaomi analytics. The current firmware dependencies, opt-out behavior and consequences of disabling it have not been verified.",
+      "dependencies": [],
+      "evidence": [
+        {
+          "kind": "SOURCE_REVIEW",
+          "source": "https://github.com/Universal-Debloater-Alliance/universal-android-debloater-next-generation/blob/e0af3336d8f71fcb2b65ad4949051cf25c654f61/resources/assets/uad_lists.json",
+          "limitation": "Source review establishes identity and potential risk, not a successful device operation or complete dependency map."
+        }
+      ],
+      "confidence": "MEDIUM",
+      "lastVerificationDate": null
+    },
+    {
+      "id": "poco16-com.miui.analytics",
+      "packageName": "com.miui.analytics",
+      "displayName": "Xiaomi Analytics",
+      "layer": "DEVICE",
+      "manufacturers": [
+        "xiaomi"
+      ],
+      "oemFamilies": [
+        "HYPER_OS"
+      ],
+      "models": [],
+      "codenames": [],
+      "profiles": [
+        "poco-f6-hyperos-android16"
+      ],
+      "minSdk": 36,
+      "maxSdk": 36,
+      "oemVersions": [],
+      "classification": "UNKNOWN",
+      "disable": {
+        "safety": "UNKNOWN",
+        "recommended": false,
+        "reason": "POCO F6 / HyperOS / Android 16 reference only. Confirm this package in the installed inventory; no disable or uninstall operation has been tested on this firmware."
+      },
+      "uninstall": {
+        "safety": "UNKNOWN",
+        "recommended": false,
+        "reason": "POCO F6 / HyperOS / Android 16 reference only. Confirm this package in the installed inventory; no disable or uninstall operation has been tested on this firmware. Uninstall may also delete application data."
+      },
+      "explanation": "POCO F6 / HyperOS / Android 16 reference only. Confirm this package in the installed inventory; no disable or uninstall operation has been tested on this firmware.",
+      "functionality": "POCO F6 / HyperOS / Android 16 reference only. Confirm this package in the installed inventory; no disable or uninstall operation has been tested on this firmware.",
+      "consequences": "POCO F6 / HyperOS / Android 16 reference only. Confirm this package in the installed inventory; no disable or uninstall operation has been tested on this firmware.",
+      "dependencies": [],
+      "evidence": [
+        {
+          "kind": "SOURCE_REVIEW",
+          "source": "https://github.com/Universal-Debloater-Alliance/universal-android-debloater-next-generation/blob/e0af3336d8f71fcb2b65ad4949051cf25c654f61/resources/assets/uad_lists.json",
+          "limitation": "Source review establishes identity and potential risk, not a successful device operation or complete dependency map."
+        }
+      ],
+      "confidence": "MEDIUM",
+      "lastVerificationDate": null
+    },
+    {
+      "id": "xiaomi-com.miui.msa.global",
+      "packageName": "com.miui.msa.global",
+      "displayName": "Xiaomi MSA",
+      "layer": "MANUFACTURER",
+      "manufacturers": [
+        "xiaomi"
+      ],
+      "oemFamilies": [],
+      "models": [],
+      "codenames": [],
+      "profiles": [],
+      "minSdk": 30,
+      "maxSdk": 2147483647,
+      "oemVersions": [],
+      "classification": "UNKNOWN",
+      "disable": {
+        "safety": "UNKNOWN",
+        "recommended": false,
+        "reason": "Research identifies Xiaomi advertising services. Removal may affect OEM advertising or recommendations; current firmware dependencies are unverified."
+      },
+      "uninstall": {
+        "safety": "UNKNOWN",
+        "recommended": false,
+        "reason": "Research identifies Xiaomi advertising services. Removal may affect OEM advertising or recommendations; current firmware dependencies are unverified. Uninstall may also delete application data."
+      },
+      "explanation": "Research identifies Xiaomi advertising services. Removal may affect OEM advertising or recommendations; current firmware dependencies are unverified.",
+      "functionality": "Research identifies Xiaomi advertising services. Removal may affect OEM advertising or recommendations; current firmware dependencies are unverified.",
+      "consequences": "Research identifies Xiaomi advertising services. Removal may affect OEM advertising or recommendations; current firmware dependencies are unverified.",
+      "dependencies": [],
+      "evidence": [
+        {
+          "kind": "SOURCE_REVIEW",
+          "source": "https://github.com/Universal-Debloater-Alliance/universal-android-debloater-next-generation/blob/e0af3336d8f71fcb2b65ad4949051cf25c654f61/resources/assets/uad_lists.json",
+          "limitation": "Source review establishes identity and potential risk, not a successful device operation or complete dependency map."
+        }
+      ],
+      "confidence": "MEDIUM",
+      "lastVerificationDate": null
+    },
+    {
+      "id": "poco16-com.miui.msa.global",
+      "packageName": "com.miui.msa.global",
+      "displayName": "Xiaomi MSA",
+      "layer": "DEVICE",
+      "manufacturers": [
+        "xiaomi"
+      ],
+      "oemFamilies": [
+        "HYPER_OS"
+      ],
+      "models": [],
+      "codenames": [],
+      "profiles": [
+        "poco-f6-hyperos-android16"
+      ],
+      "minSdk": 36,
+      "maxSdk": 36,
+      "oemVersions": [],
+      "classification": "UNKNOWN",
+      "disable": {
+        "safety": "UNKNOWN",
+        "recommended": false,
+        "reason": "POCO F6 / HyperOS / Android 16 reference only. Confirm this package in the installed inventory; no disable or uninstall operation has been tested on this firmware."
+      },
+      "uninstall": {
+        "safety": "UNKNOWN",
+        "recommended": false,
+        "reason": "POCO F6 / HyperOS / Android 16 reference only. Confirm this package in the installed inventory; no disable or uninstall operation has been tested on this firmware. Uninstall may also delete application data."
+      },
+      "explanation": "POCO F6 / HyperOS / Android 16 reference only. Confirm this package in the installed inventory; no disable or uninstall operation has been tested on this firmware.",
+      "functionality": "POCO F6 / HyperOS / Android 16 reference only. Confirm this package in the installed inventory; no disable or uninstall operation has been tested on this firmware.",
+      "consequences": "POCO F6 / HyperOS / Android 16 reference only. Confirm this package in the installed inventory; no disable or uninstall operation has been tested on this firmware.",
+      "dependencies": [],
+      "evidence": [
+        {
+          "kind": "SOURCE_REVIEW",
+          "source": "https://github.com/Universal-Debloater-Alliance/universal-android-debloater-next-generation/blob/e0af3336d8f71fcb2b65ad4949051cf25c654f61/resources/assets/uad_lists.json",
+          "limitation": "Source review establishes identity and potential risk, not a successful device operation or complete dependency map."
+        }
+      ],
+      "confidence": "MEDIUM",
+      "lastVerificationDate": null
+    },
+    {
+      "id": "hyperos-securitycenter",
+      "packageName": "com.miui.securitycenter",
+      "displayName": "Xiaomi Security",
+      "layer": "OEM",
+      "manufacturers": [
+        "xiaomi"
+      ],
+      "oemFamilies": [
+        "HYPER_OS",
+        "MIUI"
+      ],
+      "models": [],
+      "codenames": [],
+      "profiles": [],
+      "minSdk": 30,
+      "maxSdk": 2147483647,
+      "oemVersions": [],
+      "classification": "CRITICAL",
+      "disable": {
+        "safety": "CRITICAL",
+        "recommended": false,
+        "reason": "Security, battery, app-management and other OEM features may depend on this package. Research reports severe failures on some MIUI builds and functionality loss on others. Keep protected; HyperOS 16 behavior is unverified."
+      },
+      "uninstall": {
+        "safety": "CRITICAL",
+        "recommended": false,
+        "reason": "Security, battery, app-management and other OEM features may depend on this package. Research reports severe failures on some MIUI builds and functionality loss on others. Keep protected; HyperOS 16 behavior is unverified. Uninstall may also delete application data."
+      },
+      "explanation": "Security, battery, app-management and other OEM features may depend on this package. Research reports severe failures on some MIUI builds and functionality loss on others. Keep protected; HyperOS 16 behavior is unverified.",
+      "functionality": "Security, battery, app-management and other OEM features may depend on this package. Research reports severe failures on some MIUI builds and functionality loss on others. Keep protected; HyperOS 16 behavior is unverified.",
+      "consequences": "Security, battery, app-management and other OEM features may depend on this package. Research reports severe failures on some MIUI builds and functionality loss on others. Keep protected; HyperOS 16 behavior is unverified.",
+      "dependencies": [],
+      "evidence": [
+        {
+          "kind": "SOURCE_REVIEW",
+          "source": "https://github.com/Universal-Debloater-Alliance/universal-android-debloater-next-generation/blob/e0af3336d8f71fcb2b65ad4949051cf25c654f61/resources/assets/uad_lists.json",
+          "limitation": "Source review establishes identity and potential risk, not a successful device operation or complete dependency map."
+        }
+      ],
+      "confidence": "MEDIUM",
+      "lastVerificationDate": null
+    },
+    {
+      "id": "poco16-securitycenter",
+      "packageName": "com.miui.securitycenter",
+      "displayName": "Xiaomi Security",
+      "layer": "VERSION",
+      "manufacturers": [
+        "xiaomi"
+      ],
+      "oemFamilies": [
+        "HYPER_OS"
+      ],
+      "models": [],
+      "codenames": [],
+      "profiles": [
+        "poco-f6-hyperos-android16"
+      ],
+      "minSdk": 36,
+      "maxSdk": 36,
+      "oemVersions": [],
+      "classification": "CRITICAL",
+      "disable": {
+        "safety": "CRITICAL",
+        "recommended": false,
+        "reason": "Conservative protection for POCO F6 running HyperOS on Android 16. Conflicting older firmware reports do not establish safe removal here. Keep enabled."
+      },
+      "uninstall": {
+        "safety": "CRITICAL",
+        "recommended": false,
+        "reason": "Conservative protection for POCO F6 running HyperOS on Android 16. Conflicting older firmware reports do not establish safe removal here. Keep enabled. Uninstall may also delete application data."
+      },
+      "explanation": "Conservative protection for POCO F6 running HyperOS on Android 16. Conflicting older firmware reports do not establish safe removal here. Keep enabled.",
+      "functionality": "Conservative protection for POCO F6 running HyperOS on Android 16. Conflicting older firmware reports do not establish safe removal here. Keep enabled.",
+      "consequences": "Conservative protection for POCO F6 running HyperOS on Android 16. Conflicting older firmware reports do not establish safe removal here. Keep enabled.",
+      "dependencies": [],
+      "evidence": [
+        {
+          "kind": "SOURCE_REVIEW",
+          "source": "https://github.com/Universal-Debloater-Alliance/universal-android-debloater-next-generation/blob/e0af3336d8f71fcb2b65ad4949051cf25c654f61/resources/assets/uad_lists.json",
+          "limitation": "Source review establishes identity and potential risk, not a successful device operation or complete dependency map."
+        }
+      ],
+      "confidence": "MEDIUM",
+      "lastVerificationDate": null
+    }
+  ]
+}
