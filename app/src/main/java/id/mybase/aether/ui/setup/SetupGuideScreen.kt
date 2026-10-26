@@ -69,6 +69,7 @@ fun SetupGuideScreen(
             ) {
                 Text("Open Developer options")
             }
+            id.mybase.aether.ui.pairing.DeveloperOptionsStatus()
             if (state.active || state.ready) {
                 OutlinedButton(onClick = actions.cancel, modifier = Modifier.fillMaxWidth()) {
                     Text(if (state.ready) "Disconnect" else "Cancel pairing")

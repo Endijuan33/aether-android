@@ -1,9 +1,5 @@
 package id.mybase.aether.ui.onboarding
 
-import android.content.ActivityNotFoundException
-import android.content.Intent
-import android.provider.Settings
-import android.widget.Toast
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -90,27 +86,11 @@ fun OnboardingScreen(
             }
             Spacer(Modifier.height(16.dp))
             OutlinedButton(
-                onClick = {
-                    try {
-                        context.startActivity(
-                            Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS),
-                        )
-                    } catch (e: ActivityNotFoundException) {
-                        try {
-                            context.startActivity(Intent(Settings.ACTION_SETTINGS))
-                        } catch (e: ActivityNotFoundException) {
-                            Toast.makeText(
-                                    context,
-                                    "Open Settings manually to continue.",
-                                    Toast.LENGTH_LONG,
-                                )
-                                .show()
-                        }
-                    }
-                },
+                onClick = { id.mybase.aether.ui.pairing.openDeveloperSettings(context) },
             ) {
                 Text("Open Developer Settings")
             }
+            id.mybase.aether.ui.pairing.DeveloperOptionsStatus()
             Spacer(Modifier.height(12.dp))
             Button(
                 onClick = {

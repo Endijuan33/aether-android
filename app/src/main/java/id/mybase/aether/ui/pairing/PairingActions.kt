@@ -93,9 +93,7 @@ fun rememberPairingActions(controller: WirelessPairingController): PairingAction
         },
         cancel = { scope.launch { controller.cancel() } },
         openDeveloperOptions = {
-            if (!openSettings(context, Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))) {
-                openSettings(context, Intent(Settings.ACTION_SETTINGS))
-            }
+            openDeveloperSettings(context)
         },
         openNotificationSettings = {
             if (!openSettings(context, AetherPairingNotifications(context).settingsIntent())) {
@@ -121,5 +119,7 @@ private fun openSettings(context: Context, intent: Intent): Boolean =
         context.startActivity(intent)
         true
     } catch (_: android.content.ActivityNotFoundException) {
+        false
+    } catch (_: SecurityException) {
         false
     }
